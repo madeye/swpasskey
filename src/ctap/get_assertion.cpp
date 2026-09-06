@@ -100,13 +100,23 @@ Result<std::vector<std::uint8_t>> Authenticator::build_assertion(
     const store::Credential& cred, std::span<const std::uint8_t, 32> rp_id_hash,
     std::span<const std::uint8_t, 32> client_data_hash, std::uint8_t flags, bool bump_counter,
     const detail::ExtensionsIn* ext, std::optional<std::size_t> number_of_credentials) {
-  (void)ext;  // hmac-secret output lands in PR10
   auto key = load_key(cred);
   if (!key) {
     return std::unexpected(key.error());
   }
   const std::uint32_t count = bump_counter ? cred.sign_count + 1 : cred.sign_count;
   std::vector<std::uint8_t> ext_out;
+  if (ext != nullptr && ext->hmac_secret_present) {
+    auto hs = hmac_secret_output(cred, *ext, (flags & detail::kFlagUv) != 0);
+    if (!hs) {
+      return std::unexpected(hs.error());
+    }
+    std::vector<Entry> m;
+    m.emplace_back(Writer::encode_tstr("hmac-secret"), Writer::encode_bstr(*hs));
+    Writer w;
+    w.write_map(std::move(m));
+    ext_out = w.finish();
+  }
   if (!ext_out.empty()) {
     flags |= detail::kFlagEd;
   }

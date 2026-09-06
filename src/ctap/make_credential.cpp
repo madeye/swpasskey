@@ -259,7 +259,11 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_make_credential(
   }
   std::vector<std::uint8_t> ext_out;
   if (q->ext.hmac_create_secret) {
-    // PR10: {"hmac-secret": true} once advertised. Not emitted before then.
+    std::vector<Entry> m;
+    m.emplace_back(Writer::encode_tstr("hmac-secret"), Writer::encode_bool(true));
+    Writer w;
+    w.write_map(std::move(m));
+    ext_out = w.finish();
   }
   if (!ext_out.empty()) {
     flags |= detail::kFlagEd;

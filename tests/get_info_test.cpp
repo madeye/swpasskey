@@ -19,11 +19,11 @@ struct Fixture {
 
 }  // namespace
 
-TEST_CASE("getInfo snapshot is the PR9 shape (PIN, still FIDO_2_0)", "[getinfo]") {
+TEST_CASE("getInfo snapshot is the PR10 shape (PIN + hmac-secret → FIDO_2_1)", "[getinfo]") {
   Fixture f;
   auto s = f.auth.get_info();
-  REQUIRE(s.versions == std::vector<std::string>{"FIDO_2_0"});
-  REQUIRE(s.extensions.empty());
+  REQUIRE(s.versions == std::vector<std::string>{"FIDO_2_1", "FIDO_2_0"});
+  REQUIRE(s.extensions == std::vector<std::string>{"hmac-secret"});
   REQUIRE(s.aaguid == kAaguid);
   REQUIRE(s.options.client_pin == false);
   REQUIRE(s.options.pin_uv_auth_token == true);
@@ -48,7 +48,7 @@ TEST_CASE("getInfo via handle_cbor decodes as a map with sorted integer keys", "
   cbor::Reader rd(*r);
   auto n = rd.map();
   REQUIRE(n.has_value());
-  REQUIRE(*n == 11);
+  REQUIRE(*n == 12);
   std::uint64_t last = 0;
   for (std::size_t i = 0; i < *n; ++i) {
     auto k = rd.uint();

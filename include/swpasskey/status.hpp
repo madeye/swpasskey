@@ -42,6 +42,7 @@ enum class Status : std::uint8_t {
   InvalidSubcommand      = 0x3E,
   UnauthorizedPermission = 0x40,
   UnsupportedExtension   = 0x4B,
+  ExtensionFirst         = 0xE0,  // hmac-secret saltAuth mismatch
   Other                  = 0x7F,
 };
 

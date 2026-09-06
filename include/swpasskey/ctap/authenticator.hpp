@@ -114,6 +114,12 @@ private:
                               std::span<const std::uint8_t, 32> rp_id_hash, bool is_make,
                               CancelToken& cancel);
 
+  // hmac-secret (CTAP 2.1): returns the encrypted extension output for this
+  // credential, selecting CredRandomWithUV / WithoutUV by `uv`.
+  Result<std::vector<std::uint8_t>> hmac_secret_output(const store::Credential& cred,
+                                                       const detail::ExtensionsIn& ext, bool uv);
+  crypto::KeyBackend* backend_for(crypto::BackendKind kind);
+
   Result<std::unique_ptr<crypto::SigningKey>> load_key(const store::Credential& cred);
   void destroy_key(const store::Credential& cred);
   static std::uint64_t now_unix();

@@ -80,6 +80,8 @@ std::uint64_t Authenticator::now_unix() {
 
 GetInfoSnapshot Authenticator::get_info() const {
   GetInfoSnapshot s;
+  s.versions = {"FIDO_2_1", "FIDO_2_0"};  // K24: PIN (PR9) + dual-credRandom hmac-secret (PR10)
+  s.extensions = {"hmac-secret"};
   s.aaguid = cfg_.aaguid;
   s.options.client_pin = pin_->pin_set();
   s.options.pin_uv_auth_token = true;

@@ -8,10 +8,10 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 
 | | |
 | --- | --- |
-| **Phase** | PR9 (PIN protocol 2) complete. Next is PR10 (hmac-secret). PR8 / PR11 in progress on side branches. |
-| **Current branch** | `feature/pr9-pin` stacked on `feature/pr6-tpm` |
+| **Phase** | PR10 (hmac-secret, `FIDO_2_1`) complete. PR8 / PR11 in progress on side branches; then PR12. |
+| **Current branch** | `feature/pr10-hmac-secret` stacked on `feature/pr9-pin` |
 | **`main`** | Still unborn — no commits. Never commit to `main`. |
-| **Tests** | 80/80 Catch2 (incl. TPM golden + swtpm itest) + python-fido2 e2e (make/get/PIN) on software and TPM backends, passing locally |
+| **Tests** | 84/84 Catch2 (incl. TPM golden + swtpm itest) + python-fido2 e2e (make/get/PIN/hmac-secret) on software and TPM backends, passing locally |
 | **Hard v1 gate** | Code complete; **not yet run on a real Linux box** (see "Verification gaps") |
 | **HID device** | Linux: UHID transport implemented. macOS: `IOHIDUserDeviceCreateWithProperties` returns NULL without the entitlement (K26, expected) |
 
@@ -27,7 +27,8 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
                                 └── feature/pr5-store     eb944e2  PR5
                                       └── feature/pr7-se        81423c7  PR7
                                             └── feature/pr6-tpm       3ed6228  PR6
-                                                  └── feature/pr9-pin             PR9
+                                                  └── feature/pr9-pin       f0ab3ef  PR9
+                                                        └── feature/pr10-hmac-secret    PR10
 ```
 
 ## PR board
@@ -43,7 +44,7 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 | 7 | Secure Enclave signing | **done** (code; runtime needs the signed `.app`) | `feature/pr7-se` |
 | 8 | Desktop notifications for UP | pending | — |
 | 9 | PIN protocol 2 (`FIDO_2_0`) | **done** | `feature/pr9-pin` |
-| 10 | hmac-secret dual credRandom (`FIDO_2_1`) | **next** | — |
+| 10 | hmac-secret dual credRandom (`FIDO_2_1`) | **done** | `feature/pr10-hmac-secret` |
 | 11 | CTAP1/U2F (optional) | pending | — |
 | 12 | `swpasskeyctl` list/delete/reset/stats | pending | — |
 | 13 | systemd --user / launchd (optional) | pending | — |
@@ -74,6 +75,7 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 - `SecureEnclaveKeyBackend`: `SecKeyCreateRandomKey` + `kSecAttrTokenIDSecureEnclave`, `kSecAccessControlPrivateKeyUsage` only, `ECDSASignatureMessageX962SHA256` → low-S DER, handle = application tag, `wrap_secret` = data-protection generic-password item; try-create probe with OSStatus in the startup log
 - `Tpm2KeyBackend` (`SWPASSKEY_TPM`, `cmake/FindTss2.cmake`): frozen install-bound ECC primary (golden `TPM2B_PUBLIC` bytes pinned without a TPM), wrapped P-256 ECDSA children (`Esys_Create` → `Esys_Load` + `Esys_TR_SetAuth` + `Esys_Sign` + `Esys_FlushContext` per assertion), keyedhash seal/unseal for the 64-byte credRandom **without** `SENSITIVEDATAORIGIN`, handle = `u16be(pub)‖pub‖u16be(priv)‖priv` via `Tss2_MU`; `/dev/tpmrm0` only unless `SWPASSKEY_TPM_UNSAFE_NOTPMRM=1`; `SWPASSKEY_TPM_TCTI` override for swtpm
 - `authenticatorClientPIN` protocol **2 only**: getPINRetries, getKeyAgreement (COSE alg −25), setPIN, changePIN, getPinToken (mc|ga, binds rpId on first use), getPinUvAuthTokenUsingPinWithPermissions (`mc` needs `rpId`; `cm/be/lbw/acfg` → 0x40); HKDF "CTAP2 HMAC key"/"CTAP2 AES key", IV‖AES-256-CBC, full 32-byte HMAC; `LEFT(SHA-256(PIN),16)`, 4–63 code points, 8 retries then `PIN_BLOCKED`, exponential delay after 3 consecutive misses, key-agreement key regenerated after a failure; token **not one-shot** (30 s idle, touched per verify; dropped on PIN change / reset); makeCredential requires the token when a PIN is set (`PUAT_REQUIRED`), getAssertion optional (UV=0); zero-length `pinUvAuthParam` collects UP then answers `PIN_NOT_SET` / `PIN_INVALID`; getInfo advertises `clientPin`, `pinUvAuthToken`, `pinUvAuthProtocols: [2]`, still `FIDO_2_0` (K24)
+- `hmac-secret` (CTAP 2.1): makeCredential `{"hmac-secret": true}` output; getAssertion decrypts 32/64-byte salts with the PIN-protocol-2 shared secret (saltAuth mismatch → 0xE0), selects `CredRandomWithUV` / `WithoutUV` by the UV flag actually set, unwraps through the row's backend (TPM seal / SE Keychain item / software identity), `encrypt(sharedSecret, HMAC(credRandom, salt1) [‖ salt2])`; works through getNextAssertion. getInfo now `["FIDO_2_1", "FIDO_2_0"]` + `extensions: ["hmac-secret"]` (K24 satisfied)
 - `probe_key_backend(ProbeOptions)`: `software|se|tpm|auto`, hard errors for `se` on Linux / `tpm` when not built / unavailable; `auto` falls back to software with `key_backend_fallback`
 - Dev transport `SWPASSKEY_HID_SOCKET=PATH`: CTAPHID over a Unix socket so python-fido2 can drive the real loop (`tests/e2e/pyfido2_e2e.py`): INIT, PING across CONT packets, getInfo, make/get, `PackedAttestation.verify` → SELF, reset
 
@@ -83,7 +85,7 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 - Secure Enclave from the unsigned CLI: the key is generated inside the SE but `SecKeyCreateRandomKey` with `kSecAttrIsPermanent` returns **-34018 (errSecMissingEntitlement)** when adding it to the data-protection keychain, so `auto` logs `key_backend_fallback` and uses software. The public C API refuses `SecKeyCopyExternalRepresentation` on SE keys ("export not implemented"), so there is no keychain-free persistence path; the signed `.app` with `keychain-access-groups` is required (R11), as designed
 - macOS Keychain DEK path is compiled but was not exercised interactively (an unsigned CLI's login-keychain item prompts per code signature); the file fallback is what the e2e runs used (`--dek-file`)
 - libsecret path is compiled only when `pkg-config libsecret-1` is found (`SWPASSKEY_LIBSECRET`); not yet built on a Linux box
-- No hmac-secret yet (PR10), so the product is still `FIDO_2_0`; U2F (PR11) and desktop notifications (PR8) are being developed on side branches
+- U2F (PR11) and desktop notifications (PR8) are being developed on side branches; `swpasskeyctl` (PR12) not started
 - User presence is stdin/tty only (PR8 adds notifications)
 - macOS HID needs a paid-team profile carrying `com.apple.developer.hid.virtual.device`; without it the daemon logs `iohid_create_failed` and exits 1
 - CI workflow exists but has not been run on GitHub (`main` has no remote history)
@@ -114,10 +116,10 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 | No socket transport in the design | `make_socket_transport` (env `SWPASSKEY_HID_SOCKET`) | Lets the real loop be driven by python-fido2 on a machine without UHID / the macOS entitlement. Not a HID device; logged as a warning at startup |
 | `tests/get_info_golden_test.cpp` vector "accepted by python-fido2 / libfido2" | Golden hex generated by `fido2.cbor.encode` and parsed back with `fido2.ctap2.Info`; libfido2 check pending the Linux run | Same canonical rule (keys sorted by encoded bytes ⇒ shorter text keys first) |
 
-## Next up (PR10)
+## Next up
 
-1. `hmac_secret.cpp`: makeCredential `{"hmac-secret": true}` output; getAssertion salt decrypt (32/64), select `CredRandomWithUV` / `WithoutUV` by the UV flag actually set, `encrypt(sharedSecret, HMAC(credRandom, salt1) [‖ salt2])`.
-2. Then flip versions to `["FIDO_2_1", "FIDO_2_0"]` and advertise `extensions: ["hmac-secret"]`.
+1. Integrate PR8 (`feature/pr8-notify`) and PR11 (`feature/pr11-u2f`) from their side branches.
+2. PR12: `swpasskeyctl` list/delete/reset/set-pin/stats over the 0600 Unix socket.
 
 ## Verify
 
