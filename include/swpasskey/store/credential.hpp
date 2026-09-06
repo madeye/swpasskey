@@ -62,6 +62,9 @@ class Persister {
 public:
   virtual ~Persister() = default;
   virtual Result<void> save(std::span<const std::uint8_t> plaintext) = 0;
+  // Factory reset: zero-overwrite the old file and rotate the DEK before the
+  // fresh (empty) store is saved. Default: nothing.
+  virtual Result<void> reset() { return {}; }
 };
 
 // Thread-safe credential store. Every mutation flushes before returning so
@@ -114,6 +117,8 @@ public:
   std::array<std::uint8_t, 16> install_id() const;
   void set_install_id(std::array<std::uint8_t, 16> id);
 
+  // Force a write through the persister (no-op for the in-memory store).
+  Result<void> flush();
   // Canonical CBOR plaintext (DESIGN.md "File format"). Public for tests.
   std::vector<std::uint8_t> serialize() const;
   static Result<void> validate(const Credential& c);

@@ -7,6 +7,8 @@
 #include "swpasskey/hid/transport.hpp"
 #include "swpasskey/log/log.hpp"
 #include "swpasskey/store/credential.hpp"
+#include "swpasskey/store/file_store.hpp"
+#include "swpasskey/store/keychain.hpp"
 #include "swpasskey/ui/presence.hpp"
 
 #include <csignal>
@@ -30,6 +32,8 @@ constexpr std::string_view kUsage =
     "  --store PATH                   Credential store path\n"
     "  --testing                      Enable test-only presence auto-allow\n"
     "                                 (refused in RelWithDebInfo/Release)\n"
+    "  --dek-file                     Keep the store DEK in credentials.bin.dek\n"
+    "                                 (0600) instead of the OS keychain\n"
     "\n"
     "Env: SWPASSKEY_LOG=error|warn|info|debug, SWPASSKEY_TESTING=1,\n"
     "     SWPASSKEY_TPM_UNSAFE_NOTPMRM=1,\n"
@@ -57,6 +61,7 @@ struct Options {
   std::string key_backend{"auto"};
   std::filesystem::path store;
   bool testing{false};
+  bool dek_file{false};
 };
 
 }  // namespace
@@ -98,6 +103,10 @@ int main(int argc, char** argv) {
       opt.testing = true;
       continue;
     }
+    if (arg == "--dek-file") {
+      opt.dek_file = true;
+      continue;
+    }
     std::fprintf(stderr, "swpasskeyd: unknown option '%s'\n", argv[i]);
     return 2;
   }
@@ -112,14 +121,6 @@ int main(int argc, char** argv) {
   }
   const auto data_dir = opt.store.parent_path();
   if (!swpk::daemon::ensure_dir(data_dir)) {
-    return 1;
-  }
-
-  // Single instance: flock next to the eventual store (PR3: runtime lock).
-  auto lock = swpk::daemon::InstanceLock::acquire(
-      swpk::daemon::default_runtime_dir() / "swpasskeyd.lock");
-  if (!lock) {
-    std::fputs("swpasskeyd: already running (lock held)\n", stderr);
     return 1;
   }
 
@@ -138,8 +139,23 @@ int main(int argc, char** argv) {
   swpk::crypto::KeyBackend& software_ref =
       primary->kind() == swpk::crypto::BackendKind::Software ? *primary : software;
 
-  auto store = swpk::store::CredentialStore::open_memory();  // PR5: on-disk
-  (void)store->set_serial(*serial);
+  // DEK: OS keychain with a 0600-file fallback (K12). The store takes the
+  // single-instance flock (credentials.bin.lock).
+  auto file_kc = swpk::store::make_file_keychain(opt.store.string() + ".dek");
+  std::unique_ptr<swpk::store::Keychain> keychain =
+      opt.dek_file ? std::move(file_kc)
+                   : swpk::store::make_fallback_keychain(swpk::store::make_os_keychain(),
+                                                         std::move(file_kc));
+  auto store_r = swpk::store::open_file_store(opt.store, crypto, *keychain);
+  if (!store_r) {
+    std::fputs("swpasskeyd: cannot open the credential store (already running, or see log)\n",
+               stderr);
+    return 1;
+  }
+  auto& store = *store_r;
+  if (!store->set_serial(*serial)) {
+    return 1;
+  }
 
   swpk::ui::PresenceConfig pcfg;
   pcfg.testing = opt.testing;
@@ -180,7 +196,8 @@ int main(int argc, char** argv) {
                               {"transport", transport->describe()},
                               {"serial", *serial},
                               {"presence", presence->name()},
-                              {"store", "memory"}});
+                              {"store", opt.store.string()},
+                              {"keychain", keychain->name()}});
   const bool ok = loop.run();
   g_loop = nullptr;
   transport->close();

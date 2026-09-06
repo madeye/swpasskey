@@ -22,10 +22,13 @@ Credential private keys use a hardware engine when one is available (Linux TPM
 
 ## Status
 
-**PR1–PR3 are implemented** on stacked feature branches. `swpasskeyd` creates the
+**PR1–PR5 are implemented** on stacked feature branches. `swpasskeyd` creates the
 virtual HID device (Linux UHID; macOS `IOHIDUserDevice` when the entitlement is
-present), runs the two-thread CTAPHID loop with keepalives, and answers
-`authenticatorGetInfo` (`FIDO_2_0`). Next is PR4: `makeCredential` / `getAssertion`.
+present), runs the two-thread CTAPHID loop with keepalives, and implements
+`getInfo`, discoverable ES256 `makeCredential` / `getAssertion` /
+`getNextAssertion` with packed self-attestation, `reset`, and an AES-256-GCM
+credential store whose DEK lives in the OS keychain. Next: TPM 2.0 and Secure
+Enclave key backends.
 
 See [`STATUS.md`](STATUS.md) for the PR board, deviations, and what does not work yet.
 
@@ -62,7 +65,10 @@ fido2-token -I /dev/hidrawN
 ```
 
 User presence is a `y/N` prompt on the daemon's terminal until desktop
-notifications land (PR8). `--testing` (or `SWPASSKEY_TESTING=1`) auto-approves
+notifications land (PR8). The credential store is
+`$XDG_DATA_HOME/swpasskey/credentials.bin` (macOS: `~/Library/Application
+Support/swpasskey/`); its key is kept in libsecret / the macOS Keychain, or in
+`credentials.bin.dek` (0600) with `--dek-file` or when no keychain is available. `--testing` (or `SWPASSKEY_TESTING=1`) auto-approves
 and is only available in Debug builds.
 
 ## Run (macOS)

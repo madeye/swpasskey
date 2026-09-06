@@ -323,6 +323,11 @@ std::vector<std::uint8_t> CredentialStore::serialize_locked() const {
   return w.finish();
 }
 
+Result<void> CredentialStore::flush() {
+  std::lock_guard<std::mutex> lk(mu_);
+  return flush_locked();
+}
+
 std::vector<std::uint8_t> CredentialStore::serialize() const {
   std::lock_guard<std::mutex> lk(mu_);
   return serialize_locked();
@@ -461,6 +466,11 @@ Result<void> CredentialStore::factory_reset(
     OPENSSL_cleanse(u2f_->priv.data(), u2f_->priv.size());
   }
   u2f_.reset();
+  if (persister_) {
+    if (auto r = persister_->reset(); !r) {
+      return r;
+    }
+  }
   return flush_locked();
 }
 

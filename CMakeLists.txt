@@ -51,8 +51,35 @@ set_source_files_properties(src/crypto/software_key_backend.cpp PROPERTIES
   COMPILE_FLAGS -Wno-deprecated-declarations)
 
 # --- store ------------------------------------------------------------------
-swpk_lib(swpasskey_store src/store/credential_store.cpp)
+set(SWPK_STORE_SOURCES
+  src/store/credential_store.cpp
+  src/store/file_store.cpp
+  src/store/keychain.cpp)
+if(APPLE)
+  list(APPEND SWPK_STORE_SOURCES src/store/keychain_macos.mm)
+else()
+  list(APPEND SWPK_STORE_SOURCES src/store/keychain_linux.cpp)
+endif()
+swpk_lib(swpasskey_store ${SWPK_STORE_SOURCES})
 target_link_libraries(swpasskey_store PUBLIC swpasskey_crypto swpasskey_cbor swpasskey_log)
+if(APPLE)
+  set_source_files_properties(src/store/keychain_macos.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  target_link_libraries(swpasskey_store PUBLIC "-framework Security" "-framework Foundation")
+else()
+  find_package(PkgConfig)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(LIBSECRET IMPORTED_TARGET libsecret-1)
+  endif()
+  option(SWPASSKEY_LIBSECRET "Store the DEK in libsecret" ${LIBSECRET_FOUND})
+  if(SWPASSKEY_LIBSECRET)
+    if(NOT LIBSECRET_FOUND)
+      message(FATAL_ERROR "SWPASSKEY_LIBSECRET=ON but libsecret-1 was not found (pkg-config)")
+    endif()
+    target_compile_definitions(swpasskey_store PRIVATE SWPASSKEY_LIBSECRET=1)
+    target_link_libraries(swpasskey_store PUBLIC PkgConfig::LIBSECRET)
+  endif()
+  message(STATUS "libsecret DEK storage: ${SWPASSKEY_LIBSECRET}")
+endif()
 
 # --- ui ---------------------------------------------------------------------
 swpk_lib(swpasskey_ui src/ui/presence.cpp)
@@ -115,7 +142,8 @@ add_executable(swpasskey_tests
   tests/paths_test.cpp
   tests/make_credential_test.cpp
   tests/get_assertion_test.cpp
-  tests/packed_self_attest_golden_test.cpp)
+  tests/packed_self_attest_golden_test.cpp
+  tests/store_test.cpp)
 target_link_libraries(swpasskey_tests PRIVATE
   Catch2::Catch2WithMain
   swpasskey_daemon
