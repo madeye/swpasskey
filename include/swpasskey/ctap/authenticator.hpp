@@ -33,6 +33,10 @@ struct AuthenticatorConfig {
   std::array<std::uint8_t, 16> aaguid{kAaguid};
   std::chrono::milliseconds up_timeout{kUserActionTimeout};
   bool u2f_enabled{false};  // PR11
+  // PIN protocol: base delay after 3 consecutive failures (5 s, 10 s, ... cap 60 s)
+  // and the pinUvAuthToken idle timeout. Tests shrink these.
+  std::chrono::milliseconds pin_failure_delay_base{5000};
+  std::chrono::milliseconds pin_token_idle_timeout{30000};
 };
 
 struct AuthenticatorMetrics {
@@ -47,6 +51,7 @@ namespace detail {
 struct AssertionState;
 struct ExtensionsIn;
 struct UserEntity;
+class PinManager;
 }  // namespace detail
 
 class Authenticator final : public RequestHandler {
@@ -85,6 +90,8 @@ private:
                                                       CancelToken& cancel);
   Result<std::vector<std::uint8_t>> cmd_get_next_assertion();
   Result<std::vector<std::uint8_t>> cmd_reset(CancelToken& cancel);
+  Result<std::vector<std::uint8_t>> cmd_client_pin(std::span<const std::uint8_t> body,
+                                                   CancelToken& cancel);
 
   // Shared assertion builder used by getAssertion and getNextAssertion.
   Result<std::vector<std::uint8_t>> build_assertion(const store::Credential& cred,
@@ -99,9 +106,13 @@ private:
                           const std::string& user_display,
                           std::span<const std::uint8_t, 32> rp_id_hash, CancelToken& cancel);
 
-  // PIN protocol hooks (PR9). Returns the UV flag to set in authData.
+  // pinUvAuthParam handling for make/get. Returns the UV flag to set in
+  // authData. A zero-length param is the CTAP 2.1 "touch to select" probe
+  // and performs UP before answering PIN_NOT_SET / PIN_INVALID.
   Result<bool> check_pin_auth(const PinAuthIn& in, std::span<const std::uint8_t, 32> client_data_hash,
-                              std::uint8_t permission, const std::string& rp_id, bool is_make);
+                              std::uint8_t permission, const std::string& rp_id,
+                              std::span<const std::uint8_t, 32> rp_id_hash, bool is_make,
+                              CancelToken& cancel);
 
   Result<std::unique_ptr<crypto::SigningKey>> load_key(const store::Credential& cred);
   void destroy_key(const store::Credential& cred);
@@ -117,6 +128,7 @@ private:
   mutable std::mutex metrics_mu_;
   AuthenticatorMetrics metrics_;
   std::unique_ptr<detail::AssertionState> next_state_;
+  std::unique_ptr<detail::PinManager> pin_;
 };
 
 }  // namespace swpk::ctap

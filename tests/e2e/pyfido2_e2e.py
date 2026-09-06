@@ -206,7 +206,7 @@ def pin_test(ctap, cred_data, has_hmac):
         ctap.make_credential(cdh, rp, user, [{"type": "public-key", "alg": -7}], options={"rk": True})
         check(False, "makeCredential without PIN must fail when PIN set")
     except CtapError as e:
-        check(e.code in (CtapError.ERR.PIN_REQUIRED, CtapError.ERR.PUAT_REQUIRED), "makeCredential without pinUvAuthParam -> PIN_REQUIRED")
+        check(int(e.code) == 0x36, "makeCredential without pinUvAuthParam -> PUAT_REQUIRED (0x36)")
     # Chrome-style: pre-flight getAssertion then makeCredential with the SAME token (K23)
     pa = proto.authenticate(token, cdh)
     try:

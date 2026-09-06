@@ -19,18 +19,20 @@ struct Fixture {
 
 }  // namespace
 
-TEST_CASE("getInfo snapshot is the PR3 shape", "[getinfo]") {
+TEST_CASE("getInfo snapshot is the PR9 shape (PIN, still FIDO_2_0)", "[getinfo]") {
   Fixture f;
   auto s = f.auth.get_info();
   REQUIRE(s.versions == std::vector<std::string>{"FIDO_2_0"});
   REQUIRE(s.extensions.empty());
   REQUIRE(s.aaguid == kAaguid);
-  REQUIRE_FALSE(s.options.client_pin.has_value());
-  REQUIRE_FALSE(s.options.pin_uv_auth_token.has_value());
+  REQUIRE(s.options.client_pin == false);
+  REQUIRE(s.options.pin_uv_auth_token == true);
   REQUIRE(s.options.rk);
   REQUIRE(s.options.up);
   REQUIRE_FALSE(s.options.plat);
-  REQUIRE(s.pin_protocols.empty());
+  REQUIRE_FALSE(s.options.always_uv);
+  REQUIRE_FALSE(s.options.make_cred_uv_not_rqd);
+  REQUIRE(s.pin_protocols == std::vector<std::uint8_t>{2});
   REQUIRE(s.max_msg_size == 1200);
   REQUIRE(s.max_creds_in_list == 8);
   REQUIRE(s.max_cred_id_len == 32);
@@ -46,7 +48,7 @@ TEST_CASE("getInfo via handle_cbor decodes as a map with sorted integer keys", "
   cbor::Reader rd(*r);
   auto n = rd.map();
   REQUIRE(n.has_value());
-  REQUIRE(*n == 10);
+  REQUIRE(*n == 11);
   std::uint64_t last = 0;
   for (std::size_t i = 0; i < *n; ++i) {
     auto k = rd.uint();

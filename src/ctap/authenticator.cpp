@@ -1,6 +1,7 @@
 #include "swpasskey/ctap/authenticator.hpp"
 
 #include "ctap_internal.hpp"
+#include "pin_state.hpp"
 #include "swpasskey/log/log.hpp"
 
 #include <chrono>
@@ -50,7 +51,9 @@ Authenticator::Authenticator(AuthenticatorConfig cfg, crypto::Provider& crypto,
       primary_(primary_keys),
       software_(software_keys),
       store_(store),
-      presence_(presence) {}
+      presence_(presence),
+      pin_(std::make_unique<detail::PinManager>(crypto, store, cfg.pin_failure_delay_base,
+                                                cfg.pin_token_idle_timeout)) {}
 
 Authenticator::~Authenticator() = default;
 
@@ -58,7 +61,10 @@ const char* Authenticator::primary_backend_name() const { return backend_name(pr
 
 AuthenticatorMetrics Authenticator::metrics() const {
   std::lock_guard<std::mutex> lk(metrics_mu_);
-  return metrics_;
+  AuthenticatorMetrics m = metrics_;
+  m.pin_fail = pin_->pin_fail_count();
+  m.pin_block = pin_->pin_block_count();
+  return m;
 }
 
 void Authenticator::count_status(std::uint8_t status) {
@@ -75,6 +81,9 @@ std::uint64_t Authenticator::now_unix() {
 GetInfoSnapshot Authenticator::get_info() const {
   GetInfoSnapshot s;
   s.aaguid = cfg_.aaguid;
+  s.options.client_pin = pin_->pin_set();
+  s.options.pin_uv_auth_token = true;
+  s.pin_protocols = {2};
   s.remaining_discoverable = static_cast<std::uint32_t>(store_.remaining());
   return s;
 }
@@ -123,19 +132,40 @@ ui::Decision Authenticator::confirm_up(ui::PresenceRequest::Kind kind, const std
 Result<bool> Authenticator::check_pin_auth(const PinAuthIn& in,
                                            std::span<const std::uint8_t, 32> client_data_hash,
                                            std::uint8_t permission, const std::string& rp_id,
-                                           bool is_make) {
-  (void)client_data_hash;
-  (void)permission;
-  (void)rp_id;
-  (void)is_make;
+                                           std::span<const std::uint8_t, 32> rp_id_hash,
+                                           bool is_make, CancelToken& cancel) {
   if (!in.param.has_value()) {
-    return false;  // no PIN support yet: UV=0
+    if (is_make && pin_->pin_set()) {
+      return std::unexpected(Status::PuattRequired);  // makeCredUvNotRqd=false
+    }
+    return false;  // getAssertion without PIN is allowed (alwaysUv=false): UV=0
   }
   if (!in.protocol.has_value()) {
     return std::unexpected(Status::MissingParameter);
   }
-  // PR9 implements protocol 2. Until then any pinUvAuthParam is invalid.
-  return std::unexpected(Status::PinAuthInvalid);
+  if (*in.protocol != 2) {
+    return std::unexpected(Status::InvalidParameter);
+  }
+  if (in.param->empty()) {
+    // CTAP 2.1 §6.1.2 step 1 / §6.2.2 step 1: zero-length param → collect UP,
+    // then report whether a PIN is set. Used by platforms to pick a device.
+    const auto d = confirm_up(is_make ? ui::PresenceRequest::Kind::MakeCredential
+                                      : ui::PresenceRequest::Kind::GetAssertion,
+                              rp_id, "", rp_id_hash, cancel);
+    if (d == ui::Decision::Cancelled) {
+      return std::unexpected(Status::KeepaliveCancel);
+    }
+    if (d != ui::Decision::Allow) {
+      return std::unexpected(Status::OperationDenied);
+    }
+    return std::unexpected(pin_->pin_set() ? Status::PinInvalid : Status::PinNotSet);
+  }
+  return pin_->verify(*in.param, *in.protocol, client_data_hash, permission, rp_id);
+}
+
+Result<std::vector<std::uint8_t>> Authenticator::cmd_client_pin(std::span<const std::uint8_t> body,
+                                                                CancelToken& cancel) {
+  return pin_->handle(body, cancel);
 }
 
 Result<std::unique_ptr<crypto::SigningKey>> Authenticator::load_key(const store::Credential& c) {
@@ -183,6 +213,7 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_reset(CancelToken& cancel) 
   if (!r) {
     return std::unexpected(Status::Other);
   }
+  (void)pin_->regenerate_key_agreement();  // drops the token and the ECDH key
   log::warn("factory_reset");
   return std::vector<std::uint8_t>{};
 }
@@ -219,6 +250,9 @@ Result<std::vector<std::uint8_t>> Authenticator::handle_cbor(
       break;
     case kCmdReset:
       r = cmd_reset(cancel);
+      break;
+    case kCmdClientPin:
+      r = cmd_client_pin(body, cancel);
       break;
     default:
       r = std::unexpected(Status::InvalidCommand);

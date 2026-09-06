@@ -388,6 +388,8 @@ struct Rig {
     if (with_hw) hw = std::make_unique<FakeHwBackend>();
     ctap::AuthenticatorConfig cfg;
     cfg.up_timeout = std::chrono::milliseconds(200);
+    cfg.pin_failure_delay_base = std::chrono::milliseconds(2);
+    cfg.pin_token_idle_timeout = std::chrono::milliseconds(300);
     auth = std::make_unique<ctap::Authenticator>(cfg, crypto, hw ? *hw : software, software, *store, presence);
   }
 

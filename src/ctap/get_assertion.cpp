@@ -190,7 +190,7 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_get_assertion(
   PinAuthIn pin_in;
   pin_in.param = q->pin_uv_auth_param;
   pin_in.protocol = q->pin_uv_auth_protocol;
-  auto uv = check_pin_auth(pin_in, q->client_data_hash, 0x02, q->rp_id, false);
+  auto uv = check_pin_auth(pin_in, q->client_data_hash, 0x02, q->rp_id, rp_id_hash, false, cancel);
   if (!uv) {
     return fail(uv.error());
   }

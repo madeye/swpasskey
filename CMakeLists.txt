@@ -118,7 +118,8 @@ swpk_lib(swpasskey_ctap
   src/ctap/auth_data.cpp
   src/ctap/authenticator.cpp
   src/ctap/make_credential.cpp
-  src/ctap/get_assertion.cpp)
+  src/ctap/get_assertion.cpp
+  src/ctap/client_pin.cpp)
 target_link_libraries(swpasskey_ctap PUBLIC
   swpasskey_crypto swpasskey_store swpasskey_cbor swpasskey_ui swpasskey_log)
 swpasskey_disable_exceptions(swpasskey_ctap)
@@ -166,6 +167,7 @@ add_executable(swpasskey_tests
   tests/get_assertion_test.cpp
   tests/packed_self_attest_golden_test.cpp
   tests/store_test.cpp
+  tests/pin_test.cpp
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/tpm_primary_template_test.cpp>
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/itest/tpm_swtpm_itest.cpp>)
 if(SWPASSKEY_TPM)

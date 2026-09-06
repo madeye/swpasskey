@@ -10,3 +10,4 @@ CMakeUserPresets.json
 .vscode/
 .clangd/
 /out/
+/.claude/
