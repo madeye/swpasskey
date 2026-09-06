@@ -41,9 +41,10 @@ deviations from the design. What `swpasskeyd` does today:
   the daemon's terminal;
 - `swpasskeyctl list | delete | reset | set-pin | stats` over a 0600 Unix socket.
 
-The Linux gate (`fido2-token -L` and Chrome against a real `/dev/uhid`) has
-not been executed yet; everything above is covered by 102 unit tests, a swtpm
-integration test and a python-fido2 end-to-end run over a socket transport.
+Verified on Linux against a real `/dev/uhid` device with libfido2
+(`fido2-token`, `fido2-cred`, `fido2-assert`) and the python-fido2 suite;
+Chrome has not been exercised yet. 110 unit tests, a swtpm integration test
+and the python-fido2 end-to-end run back the rest.
 
 ## Build
 

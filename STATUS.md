@@ -8,11 +8,11 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 
 | | |
 | --- | --- |
-| **Phase** | **v1 code complete: PR1–PR13 implemented.** Remaining work is verification on real hardware (see "Verification gaps"). |
+| **Phase** | **v1 code complete: PR1–PR13 implemented; Linux libfido2 gate executed on real UHID.** Remaining: Chrome desktop run, macOS signed `.app`, real TPM (see "Verification gaps"). |
 | **Current branch** | `feature/pr13-packaging`, top of the stack below |
 | **`main`** | Still unborn — no commits. Never commit to `main`. Merge the stack in order. |
 | **Tests** | 109/109 Catch2 (`debug`, `asan`, `ci` presets; incl. TPM golden + swtpm itest) + python-fido2 end-to-end over the socket transport (getInfo, make/get/getNext, PIN protocol 2, hmac-secret, U2F, reset) on the software and TPM backends |
-| **Hard v1 gate** | Code complete; `fido2-token -L` / Chrome on a real Linux `/dev/uhid` **not yet executed** (no Linux box in this session) |
+| **Hard v1 gate** | **libfido2 half passed** on a real `/dev/uhid` (Ubuntu 25.10 / kernel 6.17 Lima VM): `fido2-token -L/-I`, `fido2-cred -M/-V` (self-attestation), `fido2-assert -G/-V` (allowList, discoverable, hmac-secret), `fido2-token -S/-R`, plus the full python-fido2 suite over hidraw (56 checks). **Chrome not run** (headless VM, no desktop session) |
 | **HID device** | Linux UHID; macOS `IOHIDUserDevice` (needs the signed `.app`); dev-only Unix-socket transport for tests |
 
 ## Branch stack
@@ -70,11 +70,12 @@ v1 done = PR1–PR7 + PR9 + PR12 — all present. Linux Chrome + `libfido2` on r
 
 ## Verification gaps (honest)
 
-- **Linux gate not run.** Development happened on macOS. Every Linux-only TU was syntax-checked with GCC 13 `-Werror` in a container, but `/dev/uhid` + `fido2-token -L` + Chrome have not been exercised. Run `SWPASSKEY_ITEST=ON` / `tests/itest/libfido2_itest.cpp` and the first-boot checklist in `DESIGN.md` Appendix C on a Linux box first.
-- **TPM verified against swtpm only** (tpm2-tss 4.1.3 built locally on macOS, swtpm from Homebrew), not a real `/dev/tpmrm0`.
+- **Linux gate, libfido2 half: done** in a Lima VM (Ubuntu 25.10, kernel 6.17, GCC 15, tpm2-tss/libsecret/libnotify all detected). `cmake --preset ci` builds clean, all 110 tests pass including the swtpm itest and `tests/itest/libfido2_itest.cpp` against real UHID; `fido2-token -L` lists `vendor=0x1209, product=0xf1d0`; `-I` prints `FIDO_2_1, FIDO_2_0, U2F_V2`, `hmac-secret`, the AAGUID, `rk`, `pin protocols: 2`; `fido2-cred -M -r -h` + `fido2-cred -V -h` (self-attestation) succeed; `fido2-assert -G/-V` succeed with allowList, discoverable (`-r`) and hmac-secret; `fido2-token -S` sets a PIN, `-R` resets; `python3 tests/e2e/pyfido2_e2e.py hid` prints ALL OK over hidraw. systemd's `fido_id` tags the device (`ID_FIDO_TOKEN=1`, `uaccess`). Found and fixed on the way: the design's udev rule (`ATTRS{idVendor}`) never matches a UHID device — it now matches `KERNELS=="0003:1209:F1D0.*"` — and GCC 15 `-Wformat-truncation` in the stats code.
+- **Chrome on Linux: not run.** The VM is headless; the Chrome half of the gate needs a desktop session (chrome://device-log, register + sign in at a WebAuthn demo site). Everything Chrome does over CTAPHID has been exercised by python-fido2's client over the same hidraw node.
+- **TPM verified against swtpm only** (tpm2-tss 4.1.3 built locally on macOS, and Ubuntu's packages in the VM), not a real `/dev/tpmrm0`; the Lima VM has no vTPM.
 - **Secure Enclave:** the unsigned CLI gets `-34018` (missing entitlement) when adding the SE key to the data-protection keychain, so `auto` falls back to software as designed. The public C API cannot export SE key blobs (`SecKeyCopyExternalRepresentation` → "export not implemented"), so the signed `.app` with `keychain-access-groups` + `com.apple.developer.hid.virtual.device` is required for both HID and SE on macOS (R1/R11). `packaging/macos/make_app.sh` is ready for a real profile.
 - **macOS Keychain DEK** path compiled but not exercised interactively (login-keychain ACL prompts per code signature); every e2e run used `--dek-file`.
-- **libsecret / libnotify** paths compile only where those libraries exist; neither was available in this session (the Docker VM's disk was full, so no Linux container with dev packages could be built). libnotify was type-checked against real glib headers plus a transcribed `notify.h`.
+- **libsecret / libnotify** now compile for real in the VM (`SWPASSKEY_LIBSECRET=ON`, `SWPASSKEY_LIBNOTIFY=ON`) but were not exercised at runtime: the VM has no session keyring or notification daemon, so the gate runs used `--dek-file` and `--testing`.
 - **NSAlert presence** was never displayed (unattended session); compiled and reviewed only.
 - CI workflow (`.github/workflows/ci.yml`) has not run on GitHub yet (`main` has no remote history). It installs tss2/libsecret/swtpm/fido2 on Ubuntu, runs the swtpm itest, and builds a no-TPM variant.
 
@@ -112,6 +113,12 @@ cmake --preset debug && cmake --build --preset debug
 ctest --preset debug --output-on-failure            # 102 tests
 SWPASSKEY_ITEST_TPM=1 ctest --preset debug -R tpm   # needs tpm2-tss + swtpm
 cmake --preset asan && cmake --build --preset asan && ctest --preset asan
+
+# Linux gate as executed (Ubuntu VM, user in plugdev; see packaging/linux/udev):
+sudo modprobe uhid && sudo cp packaging/linux/udev/90-swpasskey.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules
+./build/ci/swpasskeyd --testing --dek-file --key-backend=auto &
+fido2-token -L && fido2-token -I /dev/hidrawN
+python3 tests/e2e/pyfido2_e2e.py hid          # apt install python3-fido2; prints ALL OK
 
 # End to end with python-fido2 (no HID device, no entitlement needed):
 python3 -m venv .venv && .venv/bin/pip install fido2
