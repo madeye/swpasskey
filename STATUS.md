@@ -8,10 +8,10 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 
 | | |
 | --- | --- |
-| **Phase** | PR7 (Secure Enclave) complete. Next is PR6 (TPM2). |
-| **Current branch** | `feature/pr7-se` stacked on `feature/pr5-store` (PR7 landed before PR6; they are independent) |
+| **Phase** | PR6 (TPM2) complete. Next is PR9 (PIN protocol 2). |
+| **Current branch** | `feature/pr6-tpm` stacked on `feature/pr7-se` |
 | **`main`** | Still unborn — no commits. Never commit to `main`. |
-| **Tests** | 70/70 Catch2 + python-fido2 e2e (`tests/e2e/pyfido2_e2e.py`) passing locally |
+| **Tests** | 75/75 Catch2 (incl. TPM golden + swtpm itest) + python-fido2 e2e on software and TPM backends, passing locally |
 | **Hard v1 gate** | Code complete; **not yet run on a real Linux box** (see "Verification gaps") |
 | **HID device** | Linux: UHID transport implemented. macOS: `IOHIDUserDeviceCreateWithProperties` returns NULL without the entitlement (K26, expected) |
 
@@ -25,7 +25,8 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
                     └── feature/pr3-hid-getinfo   cb70a07  PR3
                           └── feature/pr4-make-get    dc1e9f5  PR4
                                 └── feature/pr5-store     eb944e2  PR5
-                                      └── feature/pr7-se              PR7
+                                      └── feature/pr7-se        81423c7  PR7
+                                            └── feature/pr6-tpm             PR6
 ```
 
 ## PR board
@@ -37,10 +38,10 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 | 3 | UHID + IOHIDUserDevice, two-thread loop, `getInfo`, macOS `.app` spike | **done** (macOS spike blocked on entitlement) | `feature/pr3-hid-getinfo` |
 | 4 | makeCredential / getAssertion, packed self-attest, stdin UP | **done** | `feature/pr4-make-get` |
 | 5 | AES-256-GCM store, Keychain/libsecret DEK, flock | **done** | `feature/pr5-store` |
-| 6 | TPM2 ESAPI signing + seal | **next** | — |
+| 6 | TPM2 ESAPI signing + seal | **done** (verified against swtpm) | `feature/pr6-tpm` |
 | 7 | Secure Enclave signing | **done** (code; runtime needs the signed `.app`) | `feature/pr7-se` |
 | 8 | Desktop notifications for UP | pending | — |
-| 9 | PIN protocol 2 (`FIDO_2_0`) | pending | — |
+| 9 | PIN protocol 2 (`FIDO_2_0`) | **next** | — |
 | 10 | hmac-secret dual credRandom (`FIDO_2_1`) | pending | — |
 | 11 | CTAP1/U2F (optional) | pending | — |
 | 12 | `swpasskeyctl` list/delete/reset/stats | pending | — |
@@ -70,11 +71,13 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 - `credentials.bin` v1 envelope (`SWPK`, version, install_id, GCM nonce, AAD = 24-byte header), canonical-CBOR plaintext, tmp + fsync + rename, refuse bad magic / unknown version / truncation / tamper; DEK in macOS Keychain (login keychain, service `io.github.swpasskey`, account `dek`) or libsecret (`io.github.swpasskey.dek`, `install_id`), with the 0600 `credentials.bin.dek` fallback and a loud warning; `--dek-file` forces the file
 - Factory reset zero-overwrites the file, rotates the DEK, writes a fresh store; serial sidecar imported into the store
 - `SecureEnclaveKeyBackend`: `SecKeyCreateRandomKey` + `kSecAttrTokenIDSecureEnclave`, `kSecAccessControlPrivateKeyUsage` only, `ECDSASignatureMessageX962SHA256` → low-S DER, handle = application tag, `wrap_secret` = data-protection generic-password item; try-create probe with OSStatus in the startup log
+- `Tpm2KeyBackend` (`SWPASSKEY_TPM`, `cmake/FindTss2.cmake`): frozen install-bound ECC primary (golden `TPM2B_PUBLIC` bytes pinned without a TPM), wrapped P-256 ECDSA children (`Esys_Create` → `Esys_Load` + `Esys_TR_SetAuth` + `Esys_Sign` + `Esys_FlushContext` per assertion), keyedhash seal/unseal for the 64-byte credRandom **without** `SENSITIVEDATAORIGIN`, handle = `u16be(pub)‖pub‖u16be(priv)‖priv` via `Tss2_MU`; `/dev/tpmrm0` only unless `SWPASSKEY_TPM_UNSAFE_NOTPMRM=1`; `SWPASSKEY_TPM_TCTI` override for swtpm
 - `probe_key_backend(ProbeOptions)`: `software|se|tpm|auto`, hard errors for `se` on Linux / `tpm` when not built / unavailable; `auto` falls back to software with `key_backend_fallback`
 - Dev transport `SWPASSKEY_HID_SOCKET=PATH`: CTAPHID over a Unix socket so python-fido2 can drive the real loop (`tests/e2e/pyfido2_e2e.py`): INIT, PING across CONT packets, getInfo, make/get, `PackedAttestation.verify` → SELF, reset
 
 ## What does not work yet
 
+- TPM: verified against **swtpm** (tpm2-tss 4.1.3 built locally on macOS): generate/load/sign (OpenSSL-verified), seal/unseal, blobs from a different primary seed fail closed, and the full python-fido2 e2e with `key_backend=tpm2`. Not yet run against a real `/dev/tpmrm0`
 - Secure Enclave from the unsigned CLI: the key is generated inside the SE but `SecKeyCreateRandomKey` with `kSecAttrIsPermanent` returns **-34018 (errSecMissingEntitlement)** when adding it to the data-protection keychain, so `auto` logs `key_backend_fallback` and uses software. The public C API refuses `SecKeyCopyExternalRepresentation` on SE keys ("export not implemented"), so there is no keychain-free persistence path; the signed `.app` with `keychain-access-groups` is required (R11), as designed
 - macOS Keychain DEK path is compiled but was not exercised interactively (an unsigned CLI's login-keychain item prompts per code signature); the file fallback is what the e2e runs used (`--dek-file`)
 - libsecret path is compiled only when `pkg-config libsecret-1` is found (`SWPASSKEY_LIBSECRET`); not yet built on a Linux box
@@ -104,14 +107,17 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 | `tests/packed_self_attest_golden_test.cpp` pins a full response | Pins authData + the two-layer map with a fixed placeholder signature (ECDSA is randomised); the live response shape is asserted byte-by-byte and python-fido2's `PackedAttestation.verify` runs in the e2e script | A byte-exact golden of a real signature is impossible without a deterministic nonce |
 | `flock` on `credentials.bin` itself | `flock` on `credentials.bin.lock` (never renamed over) | tmp+rename replaces the inode, so a lock on the data file would silently stop being exclusive after the first flush |
 | macOS DEK in the data-protection keychain with `kSecAttrAccessGroup` | Login keychain item (`kSecClassGenericPassword`, no access group) until the signed `.app` exists; `install_id` kept in `kSecAttrComment` | Access groups need the `keychain-access-groups` entitlement; an unbundled CLI cannot use them |
+| `if(UNIX AND NOT APPLE)` gate on the tss2 probe | pkg-config probe on every OS; `SWPASSKEY_TPM` auto-ON wherever tpm2-tss is found | Lets macOS developers test the TPM backend against swtpm; `auto` on macOS still prefers SE → software |
+| `KeyBackend::load` performs `Esys_Load` | `load` only decodes the wrapped blob and checks the public point; `Esys_Load`+`Sign`+`Flush` happen inside `sign_der` | Avoids two TPM loads per assertion (100–500 ms each on firmware TPMs) |
 | No socket transport in the design | `make_socket_transport` (env `SWPASSKEY_HID_SOCKET`) | Lets the real loop be driven by python-fido2 on a machine without UHID / the macOS entitlement. Not a HID device; logged as a warning at startup |
 | `tests/get_info_golden_test.cpp` vector "accepted by python-fido2 / libfido2" | Golden hex generated by `fido2.cbor.encode` and parsed back with `fido2.ctap2.Info`; libfido2 check pending the Linux run | Same canonical rule (keys sorted by encoded bytes ⇒ shorter text keys first) |
 
-## Next up (PR6 / PR7)
+## Next up (PR9)
 
-1. `tpm2_key_backend.cpp` (frozen primary template, wrapped P-256 children, seal without `SENSITIVEDATAORIGIN`), `cmake/FindTss2.cmake`, golden template test without a TPM.
-2. `se_key_backend.mm` (`SecKeyCreateRandomKey` + `kSecAttrTokenIDSecureEnclave`, `ECDSASignatureMessageX962SHA256`), Keychain generic-password `wrap_secret`.
-3. `src/crypto/probe.cpp` with the auto order; hard errors for `--key-backend=tpm|se` when not built / wrong OS.
+1. `client_pin.cpp` / `pin_state.hpp`: protocol 2 only; getPINRetries, getKeyAgreement, setPIN, changePIN, getPinToken, getPinUvAuthTokenUsingPinWithPermissions.
+2. Token not one-shot (K23); `mc`/`ga` permission + `permissionsRPID`; bind-on-first-use for getPinToken.
+3. make/get verify HMAC-32; makeCredential requires PIN when set; getAssertion optional (UV=0).
+4. getInfo PR9 snapshot: `clientPin`, `pinUvAuthToken`, `pinUvAuthProtocols: [2]`, still `FIDO_2_0`.
 
 ## Verify
 
@@ -120,6 +126,9 @@ cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug --output-on-failure
 ./build/debug/swpasskeyd --version
+
+# TPM backend against swtpm (needs tpm2-tss + swtpm):
+SWPASSKEY_ITEST_TPM=1 ctest --preset debug -R tpm
 
 # End to end with python-fido2 (no HID device needed):
 python3 -m venv .venv && .venv/bin/pip install fido2

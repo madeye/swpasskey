@@ -43,6 +43,7 @@ swpk_lib(swpasskey_log src/log/log.cpp)
 swpk_lib(swpasskey_cbor src/cbor/cbor.cpp)
 
 # --- crypto -----------------------------------------------------------------
+include(cmake/FindTss2.cmake)
 set(SWPK_CRYPTO_SOURCES
   src/crypto/openssl_provider.cpp
   src/crypto/software_key_backend.cpp
@@ -50,8 +51,20 @@ set(SWPK_CRYPTO_SOURCES
 if(APPLE)
   list(APPEND SWPK_CRYPTO_SOURCES src/crypto/se_key_backend.mm)
 endif()
+if(SWPASSKEY_TPM)
+  list(APPEND SWPK_CRYPTO_SOURCES src/crypto/tpm2_key_backend.cpp)
+endif()
 swpk_lib(swpasskey_crypto ${SWPK_CRYPTO_SOURCES})
 target_link_libraries(swpasskey_crypto PUBLIC OpenSSL::Crypto swpasskey_log)
+if(SWPASSKEY_TPM)
+  target_compile_definitions(swpasskey_crypto PUBLIC SWPASSKEY_TPM=1)
+  target_link_libraries(swpasskey_crypto PUBLIC
+    PkgConfig::TSS2_ESYS PkgConfig::TSS2_TCTILDR PkgConfig::TSS2_MU PkgConfig::TSS2_RC)
+  # tpm2-tss .pc files list -l before -L, which FindPkgConfig cannot resolve
+  # for a non-system prefix; add the directories explicitly.
+  target_link_directories(swpasskey_crypto PUBLIC
+    ${TSS2_ESYS_LIBRARY_DIRS} ${TSS2_TCTILDR_LIBRARY_DIRS} ${TSS2_MU_LIBRARY_DIRS} ${TSS2_RC_LIBRARY_DIRS})
+endif()
 set_source_files_properties(src/crypto/software_key_backend.cpp PROPERTIES
   COMPILE_FLAGS -Wno-deprecated-declarations)
 if(APPLE)
@@ -152,7 +165,12 @@ add_executable(swpasskey_tests
   tests/make_credential_test.cpp
   tests/get_assertion_test.cpp
   tests/packed_self_attest_golden_test.cpp
-  tests/store_test.cpp)
+  tests/store_test.cpp
+  $<$<BOOL:${SWPASSKEY_TPM}>:tests/tpm_primary_template_test.cpp>
+  $<$<BOOL:${SWPASSKEY_TPM}>:tests/itest/tpm_swtpm_itest.cpp>)
+if(SWPASSKEY_TPM)
+  target_include_directories(swpasskey_tests PRIVATE ${CMAKE_SOURCE_DIR}/src/crypto)
+endif()
 target_link_libraries(swpasskey_tests PRIVATE
   Catch2::Catch2WithMain
   swpasskey_daemon

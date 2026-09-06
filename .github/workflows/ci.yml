@@ -12,13 +12,20 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build g++ cmake libssl-dev fido2-tools libfido2-dev
+          sudo apt-get install -y ninja-build g++ cmake libssl-dev fido2-tools libfido2-dev \
+            libtss2-dev libsecret-1-dev swtpm swtpm-tools
       - name: Configure
         run: cmake --preset ci
       - name: Build
         run: cmake --build --preset ci
-      - name: Test
+      - name: Test (incl. TPM backend against swtpm)
         run: ctest --preset ci --output-on-failure
+        env:
+          SWPASSKEY_ITEST_TPM: "1"
+      - name: Build without tpm2-tss (software fallback must still build)
+        run: |
+          cmake -S . -B build/notpm -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSWPASSKEY_TPM=OFF -DSWPASSKEY_LIBSECRET=OFF
+          cmake --build build/notpm
 
   macos:
     runs-on: macos-14
