@@ -8,6 +8,10 @@ hmac-secret and CTAP1/U2F.
 Usage:
     SWPASSKEY_HID_SOCKET=/tmp/swpk.sock swpasskeyd --testing --key-backend=software &
     python3 tests/e2e/pyfido2_e2e.py /tmp/swpk.sock
+
+    # or against the real UHID device on Linux:
+    swpasskeyd --testing --key-backend=auto &
+    python3 tests/e2e/pyfido2_e2e.py hid
 """
 import os
 import socket
@@ -50,6 +54,14 @@ class SockConn(CtapHidConnection):
 
 
 def connect(path):
+    if path.startswith("/dev/hidraw") or path == "hid":
+        # Real HID device (Linux hidraw via UHID): use python-fido2's own transport.
+        for _ in range(50):
+            for d in CtapHidDevice.list_devices():
+                if d.descriptor.vid == 0x1209 and (path == "hid" or d.descriptor.path == path):
+                    return d
+            time.sleep(0.1)
+        raise SystemExit("no swpasskey HID device found")
     desc = HidDescriptor(path, 0x1209, 0xF1D0, 64, 64, "swpasskey", None)
     for _ in range(50):
         try:
