@@ -7,5 +7,9 @@
 # Allow the active seat to create the virtual HID device.
 KERNEL=="uhid", SUBSYSTEM=="misc", TAG+="uaccess", GROUP="plugdev", MODE="0660"
 
-# Our virtual FIDO device (VID/PID); systemd fido_id also tags by usage page 0xF1D0.
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="f1d0", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+# Our virtual FIDO device. A UHID device has no USB parent (no idVendor /
+# idProduct attributes); match the HID parent's kernel name
+# "0003:1209:F1D0.NNNN" (bus:vid:pid). systemd's fido_id also sets
+# ID_FIDO_TOKEN=1 + uaccess from the 0xF1D0 usage page for seated logins;
+# the plugdev group covers headless / SSH sessions.
+KERNEL=="hidraw*", SUBSYSTEMS=="hid", KERNELS=="0003:1209:F1D0.*", TAG+="uaccess", GROUP="plugdev", MODE="0660"
