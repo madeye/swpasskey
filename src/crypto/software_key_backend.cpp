@@ -183,11 +183,4 @@ Result<std::array<std::uint8_t, 32>> SoftwareKeyBackend::export_scalar_for_store
   return static_cast<const SoftwareSigningKey&>(key).export_scalar();
 }
 
-std::unique_ptr<KeyBackend> probe_key_backend(std::string_view pref) {
-  if (pref == "se" || pref == "tpm") {
-    return nullptr;
-  }
-  return std::make_unique<SoftwareKeyBackend>();
-}
-
 }  // namespace swpk::crypto

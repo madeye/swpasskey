@@ -43,12 +43,21 @@ swpk_lib(swpasskey_log src/log/log.cpp)
 swpk_lib(swpasskey_cbor src/cbor/cbor.cpp)
 
 # --- crypto -----------------------------------------------------------------
-swpk_lib(swpasskey_crypto
+set(SWPK_CRYPTO_SOURCES
   src/crypto/openssl_provider.cpp
-  src/crypto/software_key_backend.cpp)
-target_link_libraries(swpasskey_crypto PUBLIC OpenSSL::Crypto)
+  src/crypto/software_key_backend.cpp
+  src/crypto/probe.cpp)
+if(APPLE)
+  list(APPEND SWPK_CRYPTO_SOURCES src/crypto/se_key_backend.mm)
+endif()
+swpk_lib(swpasskey_crypto ${SWPK_CRYPTO_SOURCES})
+target_link_libraries(swpasskey_crypto PUBLIC OpenSSL::Crypto swpasskey_log)
 set_source_files_properties(src/crypto/software_key_backend.cpp PROPERTIES
   COMPILE_FLAGS -Wno-deprecated-declarations)
+if(APPLE)
+  set_source_files_properties(src/crypto/se_key_backend.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  target_link_libraries(swpasskey_crypto PUBLIC "-framework Security" "-framework Foundation")
+endif()
 
 # --- store ------------------------------------------------------------------
 set(SWPK_STORE_SOURCES

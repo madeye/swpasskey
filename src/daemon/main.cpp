@@ -36,7 +36,7 @@ constexpr std::string_view kUsage =
     "                                 (0600) instead of the OS keychain\n"
     "\n"
     "Env: SWPASSKEY_LOG=error|warn|info|debug, SWPASSKEY_TESTING=1,\n"
-    "     SWPASSKEY_TPM_UNSAFE_NOTPMRM=1,\n"
+    "     SWPASSKEY_TPM_UNSAFE_NOTPMRM=1, SWPASSKEY_TPM_TCTI=<tcti> (default device:/dev/tpmrm0),\n"
     "     SWPASSKEY_HID_SOCKET=PATH (dev: CTAPHID over a Unix socket, no HID device)\n"
     "\n"
     "This is a software authenticator. Hardware engines (TPM / Secure Enclave)\n"
@@ -130,14 +130,6 @@ int main(int argc, char** argv) {
   }
 
   swpk::crypto::Provider crypto;
-  auto primary = swpk::crypto::probe_key_backend(opt.key_backend);
-  if (!primary) {
-    std::fprintf(stderr, "swpasskeyd: key backend '%s' unavailable\n", opt.key_backend.c_str());
-    return 1;
-  }
-  swpk::crypto::SoftwareKeyBackend software;
-  swpk::crypto::KeyBackend& software_ref =
-      primary->kind() == swpk::crypto::BackendKind::Software ? *primary : software;
 
   // DEK: OS keychain with a 0600-file fallback (K12). The store takes the
   // single-instance flock (credentials.bin.lock).
@@ -156,6 +148,33 @@ int main(int argc, char** argv) {
   if (!store->set_serial(*serial)) {
     return 1;
   }
+
+  // Key backend probe (after the store: the TPM primary needs the install seed).
+  swpk::crypto::ProbeOptions popt;
+  popt.pref = opt.key_backend;
+  popt.tpm_params = [&]() -> swpk::Result<swpk::crypto::Tpm2Params> {
+    auto t = store->tpm_state_or_create(crypto);
+    if (!t) {
+      return std::unexpected(t.error());
+    }
+    return swpk::crypto::Tpm2Params{t->srk_unique_seed, t->object_auth};
+  };
+  if (const char* t = std::getenv("SWPASSKEY_TPM_TCTI"); t != nullptr && *t != 0) {
+    popt.tpm_tcti = t;
+  }
+  if (const char* u = std::getenv("SWPASSKEY_TPM_UNSAFE_NOTPMRM"); u != nullptr && std::strcmp(u, "1") == 0) {
+    popt.tpm_allow_notpmrm = true;
+  }
+  std::string probe_detail;
+  auto primary = swpk::crypto::probe_key_backend(popt, probe_detail);
+  if (!primary) {
+    std::fprintf(stderr, "swpasskeyd: key backend '%s' unavailable (%s)\n", opt.key_backend.c_str(),
+                 probe_detail.c_str());
+    return 1;
+  }
+  swpk::crypto::SoftwareKeyBackend software;
+  swpk::crypto::KeyBackend& software_ref =
+      primary->kind() == swpk::crypto::BackendKind::Software ? *primary : software;
 
   swpk::ui::PresenceConfig pcfg;
   pcfg.testing = opt.testing;
@@ -193,6 +212,7 @@ int main(int argc, char** argv) {
 
   swpk::log::info("startup", {{"version", SWPASSKEY_VERSION},
                               {"key_backend", auth.primary_backend_name()},
+                              {"probe", probe_detail},
                               {"transport", transport->describe()},
                               {"serial", *serial},
                               {"presence", presence->name()},

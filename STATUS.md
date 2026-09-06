@@ -8,8 +8,8 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 
 | | |
 | --- | --- |
-| **Phase** | PR5 complete. Next is PR6 (TPM2) / PR7 (Secure Enclave). |
-| **Current branch** | `feature/pr5-store` stacked on `feature/pr4-make-get` |
+| **Phase** | PR7 (Secure Enclave) complete. Next is PR6 (TPM2). |
+| **Current branch** | `feature/pr7-se` stacked on `feature/pr5-store` (PR7 landed before PR6; they are independent) |
 | **`main`** | Still unborn — no commits. Never commit to `main`. |
 | **Tests** | 70/70 Catch2 + python-fido2 e2e (`tests/e2e/pyfido2_e2e.py`) passing locally |
 | **Hard v1 gate** | Code complete; **not yet run on a real Linux box** (see "Verification gaps") |
@@ -24,7 +24,8 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
               └── docs/plan-and-status   e56b0d8  docs
                     └── feature/pr3-hid-getinfo   cb70a07  PR3
                           └── feature/pr4-make-get    dc1e9f5  PR4
-                                └── feature/pr5-store           PR5
+                                └── feature/pr5-store     eb944e2  PR5
+                                      └── feature/pr7-se              PR7
 ```
 
 ## PR board
@@ -37,7 +38,7 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 | 4 | makeCredential / getAssertion, packed self-attest, stdin UP | **done** | `feature/pr4-make-get` |
 | 5 | AES-256-GCM store, Keychain/libsecret DEK, flock | **done** | `feature/pr5-store` |
 | 6 | TPM2 ESAPI signing + seal | **next** | — |
-| 7 | Secure Enclave signing | pending | — |
+| 7 | Secure Enclave signing | **done** (code; runtime needs the signed `.app`) | `feature/pr7-se` |
 | 8 | Desktop notifications for UP | pending | — |
 | 9 | PIN protocol 2 (`FIDO_2_0`) | pending | — |
 | 10 | hmac-secret dual credRandom (`FIDO_2_1`) | pending | — |
@@ -68,10 +69,13 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 - `authenticatorReset`: UP required; `KeyBackend::destroy` per row
 - `credentials.bin` v1 envelope (`SWPK`, version, install_id, GCM nonce, AAD = 24-byte header), canonical-CBOR plaintext, tmp + fsync + rename, refuse bad magic / unknown version / truncation / tamper; DEK in macOS Keychain (login keychain, service `io.github.swpasskey`, account `dek`) or libsecret (`io.github.swpasskey.dek`, `install_id`), with the 0600 `credentials.bin.dek` fallback and a loud warning; `--dek-file` forces the file
 - Factory reset zero-overwrites the file, rotates the DEK, writes a fresh store; serial sidecar imported into the store
+- `SecureEnclaveKeyBackend`: `SecKeyCreateRandomKey` + `kSecAttrTokenIDSecureEnclave`, `kSecAccessControlPrivateKeyUsage` only, `ECDSASignatureMessageX962SHA256` → low-S DER, handle = application tag, `wrap_secret` = data-protection generic-password item; try-create probe with OSStatus in the startup log
+- `probe_key_backend(ProbeOptions)`: `software|se|tpm|auto`, hard errors for `se` on Linux / `tpm` when not built / unavailable; `auto` falls back to software with `key_backend_fallback`
 - Dev transport `SWPASSKEY_HID_SOCKET=PATH`: CTAPHID over a Unix socket so python-fido2 can drive the real loop (`tests/e2e/pyfido2_e2e.py`): INIT, PING across CONT packets, getInfo, make/get, `PackedAttestation.verify` → SELF, reset
 
 ## What does not work yet
 
+- Secure Enclave from the unsigned CLI: the key is generated inside the SE but `SecKeyCreateRandomKey` with `kSecAttrIsPermanent` returns **-34018 (errSecMissingEntitlement)** when adding it to the data-protection keychain, so `auto` logs `key_backend_fallback` and uses software. The public C API refuses `SecKeyCopyExternalRepresentation` on SE keys ("export not implemented"), so there is no keychain-free persistence path; the signed `.app` with `keychain-access-groups` is required (R11), as designed
 - macOS Keychain DEK path is compiled but was not exercised interactively (an unsigned CLI's login-keychain item prompts per code signature); the file fallback is what the e2e runs used (`--dek-file`)
 - libsecret path is compiled only when `pkg-config libsecret-1` is found (`SWPASSKEY_LIBSECRET`); not yet built on a Linux box
 - No PIN, hmac-secret, U2F, TPM, or Secure Enclave

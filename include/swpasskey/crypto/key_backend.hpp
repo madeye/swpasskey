@@ -4,8 +4,10 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -57,6 +59,36 @@ public:
   static Result<std::array<std::uint8_t, 32>> export_scalar_for_store(const SigningKey& key);
 };
 
+// TPM 2.0 install-bound parameters (DESIGN.md "Linux TPM 2.0"). Generated
+// once by the store and handed to the backend on first use.
+struct Tpm2Params {
+  std::array<std::uint8_t, 32> srk_unique_seed{};
+  std::array<std::uint8_t, 32> object_auth{};
+};
+
+struct ProbeOptions {
+  std::string pref{"auto"};  // auto|se|tpm|software
+  // Supplies (or generates) the TPM seeds. Required for pref=tpm / auto on Linux.
+  std::function<Result<Tpm2Params>()> tpm_params;
+  // TCTI override (e.g. "swtpm:host=127.0.0.1,port=2321"); default device:/dev/tpmrm0.
+  std::string tpm_tcti;
+  // SWPASSKEY_TPM_UNSAFE_NOTPMRM=1: also try /dev/tpm0 (no kernel RM).
+  bool tpm_allow_notpmrm{false};
+};
+
+// --key-backend=auto|se|tpm|software. `detail` receives a one-line reason
+// for the startup log ("probe=ok tcti=..." / "probe=se_unavailable err=...").
+// Returns nullptr when an explicit backend is unavailable (hard error for
+// the caller); `auto` never returns nullptr.
+std::unique_ptr<KeyBackend> probe_key_backend(const ProbeOptions& opt, std::string& detail);
 std::unique_ptr<KeyBackend> probe_key_backend(std::string_view pref);
+
+// Platform factories (nullptr + reason when unavailable).
+#if defined(__APPLE__)
+std::unique_ptr<KeyBackend> make_se_key_backend(std::string& why);
+#endif
+#if defined(SWPASSKEY_TPM)
+std::unique_ptr<KeyBackend> make_tpm2_key_backend(const ProbeOptions& opt, std::string& why);
+#endif
 
 }  // namespace swpk::crypto
