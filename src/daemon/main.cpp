@@ -32,7 +32,8 @@ constexpr std::string_view kUsage =
     "                                 (refused in RelWithDebInfo/Release)\n"
     "\n"
     "Env: SWPASSKEY_LOG=error|warn|info|debug, SWPASSKEY_TESTING=1,\n"
-    "     SWPASSKEY_TPM_UNSAFE_NOTPMRM=1\n"
+    "     SWPASSKEY_TPM_UNSAFE_NOTPMRM=1,\n"
+    "     SWPASSKEY_HID_SOCKET=PATH (dev: CTAPHID over a Unix socket, no HID device)\n"
     "\n"
     "This is a software authenticator. Hardware engines (TPM / Secure Enclave)\n"
     "protect private scalars from extraction, not from same-uid use. The\n"
@@ -153,7 +154,12 @@ int main(int argc, char** argv) {
 
   swpk::hid::DeviceConfig dcfg;
   dcfg.serial = *serial;
-  auto transport = swpk::hid::make_transport(dcfg);
+  std::unique_ptr<swpk::hid::Transport> transport;
+  if (const char* sock = std::getenv("SWPASSKEY_HID_SOCKET"); sock != nullptr && *sock != 0) {
+    transport = swpk::hid::make_socket_transport(sock);  // development only
+  } else {
+    transport = swpk::hid::make_transport(dcfg);
+  }
   if (!transport) {
     std::fputs("swpasskeyd: no HID transport on this platform\n", stderr);
     return 1;

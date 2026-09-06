@@ -45,4 +45,9 @@ public:
 // nullptr on unsupported platforms.
 std::unique_ptr<Transport> make_transport(DeviceConfig cfg);
 
+// Development-only transport: raw 64-byte reports over a Unix domain socket
+// (SWPASSKEY_HID_SOCKET=/path). Drives the real loop from python-fido2 or a
+// test client on machines without /dev/uhid or the macOS entitlement.
+std::unique_ptr<Transport> make_socket_transport(std::string path);
+
 }  // namespace swpk::hid

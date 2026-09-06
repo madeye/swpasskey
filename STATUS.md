@@ -8,10 +8,10 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 
 | | |
 | --- | --- |
-| **Phase** | PR3 complete. Next is PR4 (makeCredential / getAssertion). |
-| **Current branch** | `feature/pr3-hid-getinfo` stacked on `docs/plan-and-status` |
+| **Phase** | PR4 complete. Next is PR5 (persistent encrypted store). |
+| **Current branch** | `feature/pr4-make-get` stacked on `feature/pr3-hid-getinfo` |
 | **`main`** | Still unborn — no commits. Never commit to `main`. |
-| **Tests** | 46/46 passing locally (`cmake --preset debug && ctest --preset debug`) |
+| **Tests** | 64/64 Catch2 + python-fido2 e2e (`tests/e2e/pyfido2_e2e.py`) passing locally |
 | **Hard v1 gate** | Code complete; **not yet run on a real Linux box** (see "Verification gaps") |
 | **HID device** | Linux: UHID transport implemented. macOS: `IOHIDUserDeviceCreateWithProperties` returns NULL without the entitlement (K26, expected) |
 
@@ -22,7 +22,8 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
   └── feature/pr1-cmake-skeleton     3154504  PR1
         └── feature/pr2-hid-cbor-crypto  e1fe6c1  PR2
               └── docs/plan-and-status   e56b0d8  docs
-                    └── feature/pr3-hid-getinfo     PR3
+                    └── feature/pr3-hid-getinfo   cb70a07  PR3
+                          └── feature/pr4-make-get          PR4
 ```
 
 ## PR board
@@ -32,8 +33,8 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 | 1 | CMake skeleton, Catch2, logger, README threat model | **done** | `feature/pr1-cmake-skeleton` `3154504` |
 | 2 | CTAPHID framer, canonical CBOR, OpenSSL 3, `SoftwareKeyBackend` | **done** | `feature/pr2-hid-cbor-crypto` `e1fe6c1` |
 | 3 | UHID + IOHIDUserDevice, two-thread loop, `getInfo`, macOS `.app` spike | **done** (macOS spike blocked on entitlement) | `feature/pr3-hid-getinfo` |
-| 4 | makeCredential / getAssertion, packed self-attest, stdin UP | **next** | — |
-| 5 | AES-256-GCM store, Keychain/libsecret DEK, flock | pending | — |
+| 4 | makeCredential / getAssertion, packed self-attest, stdin UP | **done** | `feature/pr4-make-get` |
+| 5 | AES-256-GCM store, Keychain/libsecret DEK, flock | **next** | — |
 | 6 | TPM2 ESAPI signing + seal | pending | — |
 | 7 | Secure Enclave signing | pending | — |
 | 8 | Desktop notifications for UP | pending | — |
@@ -61,11 +62,14 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 - Serial sidecar (`serial`, 0600, 16 hex), `flock` instance lock, XDG / Application Support paths
 - `swpasskeyd` runs the real loop: `--key-backend`, `--store`, `--testing`, SIGINT/SIGTERM clean shutdown
 - Packaging: `packaging/linux/udev/90-swpasskey.rules`, macOS entitlements (debug/release), `Info.plist`, `make_app.sh`
+- `makeCredential`: ES256 resident keys, packed **self**-attestation (text-key `attStmt`), option-byte policy (`up=false`→0x2C, `rk=false`→0x2B, `uv=true`→0x2C, `credProtect>1`→0x4B), excludeList after UP (Deny/Timeout still 0x19), `KEY_STORE_FULL` at 100, dual 64-byte credRandom wrapped per credential
+- `getAssertion` / `getNextAssertion`: discoverable + allowList, MRU ordering, `user.id`-only when UV=0, pre-flight `up=false` signs without bumping the counter, persist-before-send, 30 s next-assertion state, mixed-backend `load()` dispatch on the row's `backend` (HW rows fail closed when the probed backend differs)
+- `authenticatorReset`: UP required; `KeyBackend::destroy` per row
+- Dev transport `SWPASSKEY_HID_SOCKET=PATH`: CTAPHID over a Unix socket so python-fido2 can drive the real loop (`tests/e2e/pyfido2_e2e.py`): INIT, PING across CONT packets, getInfo, make/get, `PackedAttestation.verify` → SELF, reset
 
 ## What does not work yet
 
-- No CTAP make / get (PR4) — the device enumerates and answers `getInfo` only
-- Store is in-memory only (PR5 adds the AES-GCM file + keychain DEK)
+- Store is in-memory only (PR5 adds the AES-GCM file + keychain DEK); credentials vanish on restart
 - No PIN, hmac-secret, U2F, TPM, or Secure Enclave
 - User presence is stdin/tty only (PR8 adds notifications)
 - macOS HID needs a paid-team profile carrying `com.apple.developer.hid.virtual.device`; without it the daemon logs `iohid_create_failed` and exits 1
@@ -87,15 +91,18 @@ v1 done = PR1–PR7 + PR9 + PR12. Linux Chrome + `libfido2` is the release gate 
 | `IOHIDUserDeviceCreate` + `RegisterSetReportCallback` | `IOHIDUserDeviceCreateWithProperties` + `RegisterSetReportBlock` / `SetDispatchQueue` / `Activate` | The callback API is gone from the current SDK header (`IOKit/hidsystem/IOHIDUserDevice.h`); the block API is the only one shipped |
 | `getInfo` answered without touching the worker | All CBOR goes through the worker; the first keepalive fires 100 ms after dispatch, so `getInfo` still produces zero keepalives | One dispatch path; `tests/keepalive_loop_test.cpp` pins "zero keepalives for getInfo" |
 | `Authenticator` ctor introduced in PR4 with `MemoryStore` | `store::CredentialStore` (single class, `open_memory()` now, `open_with(plaintext, Persister)` for PR5) and `ui::Presence` land in PR3 | Avoids rewriting the public ctor in PR4/PR5; the loop test needs a `Presence` shape anyway |
+| UP timeout → `ACTION_TIMEOUT` (0x3A) in the makeCredential diagram | `USER_ACTION_TIMEOUT` (0x2F) for make/get/reset | CTAP 2.1 §6.1.2/§6.2.2 name 0x2F for a UP timeout; 0x3A is the generic action timeout. Chrome/libfido2 treat both as timeout |
+| getAssertion with zero eligible credentials prompts UP first (CTAP 2.1 privacy note) | Immediate `NO_CREDENTIALS`, as the design's step 2 says | Matches the design; revisit if an RP-enumeration concern is raised |
+| `tests/packed_self_attest_golden_test.cpp` pins a full response | Pins authData + the two-layer map with a fixed placeholder signature (ECDSA is randomised); the live response shape is asserted byte-by-byte and python-fido2's `PackedAttestation.verify` runs in the e2e script | A byte-exact golden of a real signature is impossible without a deterministic nonce |
+| No socket transport in the design | `make_socket_transport` (env `SWPASSKEY_HID_SOCKET`) | Lets the real loop be driven by python-fido2 on a machine without UHID / the macOS entitlement. Not a HID device; logged as a warning at startup |
 | `tests/get_info_golden_test.cpp` vector "accepted by python-fido2 / libfido2" | Golden hex generated by `fido2.cbor.encode` and parsed back with `fido2.ctap2.Info`; libfido2 check pending the Linux run | Same canonical rule (keys sorted by encoded bytes ⇒ shorter text keys first) |
 
-## Next up (PR4)
+## Next up (PR5)
 
-1. `make_credential.cpp` / `get_assertion.cpp` / `auth_data.cpp` against `KeyBackend` (software).
-2. Packed self-attestation with **text** keys in `attStmt`; golden hex.
-3. excludeList after UP; Deny + hit → `0x19`; only HID CANCEL → `0x2D`.
-4. Pre-flight `up=false` still signs, no counter bump. Option-byte policy per DESIGN.md.
-5. `getNextAssertion` state (30 s).
+1. `credentials.bin` envelope (magic/version/install_id/nonce/GCM) + tmp/fsync/rename.
+2. DEK in macOS Keychain (`io.github.swpasskey` / `dek`) and libsecret; 0600 file fallback with a warning.
+3. `flock` on the store; import the serial sidecar; reject unknown versions.
+4. `swpasskeyd` switches from `open_memory()` to the on-disk store.
 
 ## Verify
 
@@ -104,6 +111,11 @@ cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug --output-on-failure
 ./build/debug/swpasskeyd --version
+
+# End to end with python-fido2 (no HID device needed):
+python3 -m venv .venv && .venv/bin/pip install fido2
+SWPASSKEY_HID_SOCKET=/tmp/swpk.sock ./build/debug/swpasskeyd --testing --key-backend=software --store /tmp/swpk/credentials.bin &
+.venv/bin/python tests/e2e/pyfido2_e2e.py /tmp/swpk.sock
 ```
 
 On Apple Silicon, CMake picks Homebrew `openssl@3` automatically. Override with `-DOPENSSL_ROOT_DIR=...` if needed.

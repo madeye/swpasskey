@@ -13,8 +13,11 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace swpk::ctap {
@@ -40,6 +43,12 @@ struct AuthenticatorMetrics {
   std::array<std::uint64_t, 256> ctap_status{};
 };
 
+namespace detail {
+struct AssertionState;
+struct ExtensionsIn;
+struct UserEntity;
+}  // namespace detail
+
 class Authenticator final : public RequestHandler {
 public:
   Authenticator(AuthenticatorConfig cfg,
@@ -48,6 +57,7 @@ public:
                 crypto::KeyBackend& software_keys,  // legacy rows; may alias primary
                 store::CredentialStore& store,
                 ui::Presence& presence);
+  ~Authenticator() override;
 
   Result<std::vector<std::uint8_t>> handle_cbor(std::span<const std::uint8_t> request,
                                                 CancelToken& cancel) override;
@@ -59,17 +69,54 @@ public:
   AuthenticatorMetrics metrics() const;
   const char* primary_backend_name() const;
 
+  // Control-socket entry points (PR12). `reset` still requires local UP.
+  Result<void> ctl_reset(CancelToken& cancel);
+
 private:
+  struct PinAuthIn {
+    std::optional<std::vector<std::uint8_t>> param;  // pinUvAuthParam
+    std::optional<std::uint64_t> protocol;           // pinUvAuthProtocol
+  };
+
   Result<std::vector<std::uint8_t>> cmd_get_info();
+  Result<std::vector<std::uint8_t>> cmd_make_credential(std::span<const std::uint8_t> body,
+                                                        CancelToken& cancel);
+  Result<std::vector<std::uint8_t>> cmd_get_assertion(std::span<const std::uint8_t> body,
+                                                      CancelToken& cancel);
+  Result<std::vector<std::uint8_t>> cmd_get_next_assertion();
+  Result<std::vector<std::uint8_t>> cmd_reset(CancelToken& cancel);
+
+  // Shared assertion builder used by getAssertion and getNextAssertion.
+  Result<std::vector<std::uint8_t>> build_assertion(const store::Credential& cred,
+                                                    std::span<const std::uint8_t, 32> rp_id_hash,
+                                                    std::span<const std::uint8_t, 32> client_data_hash,
+                                                    std::uint8_t flags, bool bump_counter,
+                                                    const detail::ExtensionsIn* ext,
+                                                    std::optional<std::size_t> number_of_credentials);
+
+  // User presence with keepalive status bookkeeping.
+  ui::Decision confirm_up(ui::PresenceRequest::Kind kind, const std::string& rp_id,
+                          const std::string& user_display,
+                          std::span<const std::uint8_t, 32> rp_id_hash, CancelToken& cancel);
+
+  // PIN protocol hooks (PR9). Returns the UV flag to set in authData.
+  Result<bool> check_pin_auth(const PinAuthIn& in, std::span<const std::uint8_t, 32> client_data_hash,
+                              std::uint8_t permission, const std::string& rp_id, bool is_make);
+
+  Result<std::unique_ptr<crypto::SigningKey>> load_key(const store::Credential& cred);
+  void destroy_key(const store::Credential& cred);
+  static std::uint64_t now_unix();
+  void count_status(std::uint8_t status);
 
   AuthenticatorConfig cfg_;
-  [[maybe_unused]] crypto::Provider& crypto_;    // used from PR4
+  crypto::Provider& crypto_;
   crypto::KeyBackend& primary_;
-  [[maybe_unused]] crypto::KeyBackend& software_;  // used from PR4
+  crypto::KeyBackend& software_;
   store::CredentialStore& store_;
-  [[maybe_unused]] ui::Presence& presence_;      // used from PR4
+  ui::Presence& presence_;
   mutable std::mutex metrics_mu_;
   AuthenticatorMetrics metrics_;
+  std::unique_ptr<detail::AssertionState> next_state_;
 };
 
 }  // namespace swpk::ctap

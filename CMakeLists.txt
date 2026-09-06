@@ -66,20 +66,23 @@ swpk_lib(swpasskey_ctap
   src/ctap/hid_framer.cpp
   src/ctap/hid_device.cpp
   src/ctap/get_info.cpp
-  src/ctap/authenticator.cpp)
+  src/ctap/auth_data.cpp
+  src/ctap/authenticator.cpp
+  src/ctap/make_credential.cpp
+  src/ctap/get_assertion.cpp)
 target_link_libraries(swpasskey_ctap PUBLIC
   swpasskey_crypto swpasskey_store swpasskey_cbor swpasskey_ui swpasskey_log)
 swpasskey_disable_exceptions(swpasskey_ctap)
 
 # --- hid transports -----------------------------------------------------------
 if(APPLE)
-  swpk_lib(swpasskey_hid src/hid/iokit_transport.mm)
+  swpk_lib(swpasskey_hid src/hid/iokit_transport.mm src/hid/socket_transport.cpp)
   set_source_files_properties(src/hid/iokit_transport.mm PROPERTIES
     COMPILE_FLAGS "-fobjc-arc")
   target_link_libraries(swpasskey_hid PUBLIC
     "-framework IOKit" "-framework CoreFoundation" "-framework Foundation")
 else()
-  swpk_lib(swpasskey_hid src/hid/uhid_transport.cpp)
+  swpk_lib(swpasskey_hid src/hid/uhid_transport.cpp src/hid/socket_transport.cpp)
 endif()
 target_link_libraries(swpasskey_hid PUBLIC swpasskey_log)
 
@@ -109,7 +112,10 @@ add_executable(swpasskey_tests
   tests/get_info_golden_test.cpp
   tests/hid_device_test.cpp
   tests/keepalive_loop_test.cpp
-  tests/paths_test.cpp)
+  tests/paths_test.cpp
+  tests/make_credential_test.cpp
+  tests/get_assertion_test.cpp
+  tests/packed_self_attest_golden_test.cpp)
 target_link_libraries(swpasskey_tests PRIVATE
   Catch2::Catch2WithMain
   swpasskey_daemon
