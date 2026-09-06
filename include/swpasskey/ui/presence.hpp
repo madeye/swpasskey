@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -29,6 +30,15 @@ public:
   virtual Decision confirm(const PresenceRequest& req, ctap::CancelToken& cancel,
                            std::chrono::milliseconds timeout) = 0;
   virtual const char* name() const = 0;
+
+  // True when the implementation needs the process main thread to run a GUI
+  // event loop (AppKit). `main()` then runs the daemon loop on a side thread
+  // and hands the main thread to `run_main_loop`.
+  virtual bool needs_main_thread() const { return false; }
+
+  // Runs the platform event loop until `should_stop()` returns true. Called on
+  // the main thread only when `needs_main_thread()`. The default does nothing.
+  virtual void run_main_loop(std::function<bool()> /*should_stop*/) {}
 };
 
 struct PresenceConfig {
@@ -36,6 +46,10 @@ struct PresenceConfig {
   bool testing{false};
   // Prefer a desktop notification when available (PR8); else stdin/tty.
   bool allow_notifications{true};
+  // SWPASSKEY_PRESENCE=auto|stdin|notify|alert. "auto" honours
+  // `allow_notifications`; "stdin" forces the tty prompt; "notify"/"alert" ask
+  // for the platform GUI prompt even when `allow_notifications` is false.
+  std::string prefer{"auto"};
 };
 
 // Always Deny. For tests and for headless daemons with no tty.
@@ -68,6 +82,12 @@ public:
   const char* name() const override { return "auto-allow"; }
 };
 #endif
+
+// The platform desktop prompt: libnotify actions on Linux, an AppKit NSAlert
+// on macOS. Returns nullptr when this process cannot show one (no notification
+// server / no server "actions" capability / no GUI session / not built with
+// libnotify). Never blocks and never shows anything by itself.
+std::unique_ptr<Presence> make_desktop_presence();
 
 // Picks the best available implementation for this process (notification
 // daemon when PR8 lands, otherwise stdin). Returns nullptr if `testing` is set

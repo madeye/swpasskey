@@ -12,6 +12,7 @@
 #include "swpasskey/store/keychain.hpp"
 #include "swpasskey/ui/presence.hpp"
 
+#include <atomic>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +21,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace {
 
@@ -38,6 +40,8 @@ constexpr std::string_view kUsage =
     "  --ctl-socket PATH              Control socket for swpasskeyctl\n"
     "\n"
     "Env: SWPASSKEY_LOG=error|warn|info|debug, SWPASSKEY_TESTING=1,\n"
+    "     SWPASSKEY_PRESENCE=auto|stdin|notify|alert (default auto: desktop prompt,\n"
+    "                        else the tty prompt; 'stdin' forces the tty prompt),\n"
     "     SWPASSKEY_TPM_UNSAFE_NOTPMRM=1, SWPASSKEY_TPM_TCTI=<tcti> (default device:/dev/tpmrm0),\n"
     "     SWPASSKEY_HID_SOCKET=PATH (dev: CTAPHID over a Unix socket, no HID device)\n"
     "\n"
@@ -62,6 +66,7 @@ void on_signal(int) {
 struct Options {
   std::string key_backend{"auto"};
   std::filesystem::path store;
+  std::string presence{"auto"};
   bool testing{false};
   bool dek_file{false};
   std::filesystem::path ctl_socket;
@@ -74,6 +79,9 @@ int main(int argc, char** argv) {
   Options opt;
   if (const char* t = std::getenv("SWPASSKEY_TESTING"); t != nullptr && std::strcmp(t, "1") == 0) {
     opt.testing = true;
+  }
+  if (const char* p = std::getenv("SWPASSKEY_PRESENCE"); p != nullptr && *p != 0) {
+    opt.presence = p;
   }
 
   for (int i = 1; i < argc; ++i) {
@@ -189,6 +197,7 @@ int main(int argc, char** argv) {
 
   swpk::ui::PresenceConfig pcfg;
   pcfg.testing = opt.testing;
+  pcfg.prefer = opt.presence;
   auto presence = swpk::ui::make_presence(pcfg);
   if (!presence) {
     std::fputs("swpasskeyd: --testing is not available in this build\n", stderr);
@@ -253,7 +262,21 @@ int main(int argc, char** argv) {
                               {"presence", presence->name()},
                               {"store", opt.store.string()},
                               {"keychain", keychain->name()}});
-  const bool ok = loop.run();
+  bool ok = false;
+  if (presence->needs_main_thread()) {
+    // AppKit owns the main thread (NSAlert). Run the HID loop beside it and
+    // let the presence event loop exit as soon as run() returns — including
+    // when SIGINT/SIGTERM called loop.stop().
+    std::atomic<bool> loop_done{false};
+    std::thread io([&] {
+      ok = loop.run();
+      loop_done.store(true, std::memory_order_release);
+    });
+    presence->run_main_loop([&] { return loop_done.load(std::memory_order_acquire); });
+    io.join();
+  } else {
+    ok = loop.run();
+  }
   g_loop = nullptr;
   ctl.stop();
   transport->close();

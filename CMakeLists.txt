@@ -106,8 +106,25 @@ else()
 endif()
 
 # --- ui ---------------------------------------------------------------------
-swpk_lib(swpasskey_ui src/ui/presence.cpp)
-target_link_libraries(swpasskey_ui PUBLIC swpasskey_log)
+set(SWPK_UI_SOURCES src/ui/presence.cpp)
+if(APPLE)
+  list(APPEND SWPK_UI_SOURCES src/ui/presence_macos.mm)
+else()
+  include(cmake/FindLibnotify.cmake)
+  if(SWPASSKEY_LIBNOTIFY)
+    list(APPEND SWPK_UI_SOURCES src/ui/presence_linux.cpp)
+  endif()
+endif()
+swpk_lib(swpasskey_ui ${SWPK_UI_SOURCES})
+target_link_libraries(swpasskey_ui PUBLIC swpasskey_log Threads::Threads)
+if(APPLE)
+  set_source_files_properties(src/ui/presence_macos.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  target_link_libraries(swpasskey_ui PUBLIC
+    "-framework AppKit" "-framework CoreGraphics" "-framework Foundation")
+elseif(SWPASSKEY_LIBNOTIFY)
+  target_compile_definitions(swpasskey_ui PUBLIC SWPASSKEY_LIBNOTIFY=1)
+  target_link_libraries(swpasskey_ui PUBLIC PkgConfig::LIBNOTIFY)
+endif()
 # AutoAllowPresence exists only in Debug builds (never in release presets).
 target_compile_definitions(swpasskey_ui PUBLIC
   $<$<CONFIG:Debug>:SWPASSKEY_ALLOW_TESTING_PRESENCE>)
@@ -177,6 +194,7 @@ add_executable(swpasskey_tests
   tests/get_info_golden_test.cpp
   tests/hid_device_test.cpp
   tests/keepalive_loop_test.cpp
+  tests/presence_test.cpp
   tests/paths_test.cpp
   tests/make_credential_test.cpp
   tests/get_assertion_test.cpp

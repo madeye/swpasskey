@@ -12,6 +12,10 @@
   <string>swpasskeyd</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <!-- NSAlert user presence (PR8) needs an AppKit principal class; LSUIElement
+       keeps the daemon out of the Dock (NSApplicationActivationPolicyAccessory). -->
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
