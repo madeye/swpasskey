@@ -152,9 +152,15 @@ swpk_lib(swpasskey_daemon
 target_link_libraries(swpasskey_daemon PUBLIC
   swpasskey_ctap swpasskey_hid swpasskey_log Threads::Threads)
 
+# --- control socket (server + client helper) -----------------------------------
+swpk_lib(swpasskey_ctl src/ctl/server.cpp src/ctl/json.cpp)
+target_link_libraries(swpasskey_ctl PUBLIC swpasskey_daemon swpasskey_log)
+
 # --- executables ------------------------------------------------------------
 add_executable(swpasskeyd src/daemon/main.cpp)
-target_link_libraries(swpasskeyd PRIVATE swpasskey_daemon swpasskey_warnings)
+target_link_libraries(swpasskeyd PRIVATE swpasskey_daemon swpasskey_ctl swpasskey_warnings)
+add_executable(swpasskeyctl src/ctl/main.cpp)
+target_link_libraries(swpasskeyctl PRIVATE swpasskey_ctl swpasskey_warnings)
 target_compile_definitions(swpasskeyd PRIVATE
   SWPASSKEY_VERSION="${PROJECT_VERSION}")
 
@@ -179,6 +185,7 @@ add_executable(swpasskey_tests
   tests/store_test.cpp
   tests/pin_test.cpp
   tests/hmac_secret_test.cpp
+  tests/ctl_test.cpp
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/tpm_primary_template_test.cpp>
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/itest/tpm_swtpm_itest.cpp>)
 if(SWPASSKEY_TPM)
@@ -187,6 +194,7 @@ endif()
 target_link_libraries(swpasskey_tests PRIVATE
   Catch2::Catch2WithMain
   swpasskey_daemon
+  swpasskey_ctl
   swpasskey_warnings)
 include(Catch)
 catch_discover_tests(swpasskey_tests)

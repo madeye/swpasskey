@@ -357,6 +357,7 @@ std::vector<std::uint8_t> Authenticator::u2f_authenticate(std::uint8_t p1,
 
 std::vector<std::uint8_t> Authenticator::handle_u2f(std::span<const std::uint8_t> apdu,
                                                     CancelToken& cancel) {
+  std::lock_guard<std::mutex> lk(op_mu_);
   if (!cfg_.u2f_enabled) {
     return sw(kSwInsNotSupported);
   }

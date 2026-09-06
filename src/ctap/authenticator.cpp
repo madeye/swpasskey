@@ -224,6 +224,7 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_reset(CancelToken& cancel) 
 }
 
 Result<void> Authenticator::ctl_reset(CancelToken& cancel) {
+  std::lock_guard<std::mutex> lk(op_mu_);
   auto r = cmd_reset(cancel);
   if (!r) {
     return std::unexpected(r.error());
@@ -231,8 +232,36 @@ Result<void> Authenticator::ctl_reset(CancelToken& cancel) {
   return {};
 }
 
+Result<void> Authenticator::ctl_set_pin(std::string_view pin, CancelToken& cancel) {
+  std::lock_guard<std::mutex> lk(op_mu_);
+  static const std::array<std::uint8_t, 32> kZero{};
+  const auto d = confirm_up(ui::PresenceRequest::Kind::SetPin, "", "", kZero, cancel);
+  if (d == ui::Decision::Cancelled) {
+    return std::unexpected(Status::KeepaliveCancel);
+  }
+  if (d == ui::Decision::Timeout) {
+    return std::unexpected(Status::UserActionTimeout);
+  }
+  if (d != ui::Decision::Allow) {
+    return std::unexpected(Status::OperationDenied);
+  }
+  return pin_->set_pin_local(pin);
+}
+
+Result<void> Authenticator::ctl_delete(std::span<const std::uint8_t> cred_id) {
+  std::lock_guard<std::mutex> lk(op_mu_);
+  auto row = store_.find_by_id(cred_id);
+  if (!row) {
+    return std::unexpected(Status::InvalidCredential);
+  }
+  destroy_key(*row);
+  next_state_.reset();
+  return store_.erase(cred_id);
+}
+
 Result<std::vector<std::uint8_t>> Authenticator::handle_cbor(
     std::span<const std::uint8_t> request, CancelToken& cancel) {
+  std::lock_guard<std::mutex> lk(op_mu_);
   if (request.empty()) {
     return std::unexpected(Status::InvalidLength);
   }

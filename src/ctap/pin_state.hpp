@@ -70,6 +70,8 @@ public:
   // ECDH against the platform key for hmac-secret (same session key).
   Result<SharedSecret> shared_secret_for(const crypto::P256PublicKey& platform_key);
 
+  // swpasskeyctl set-pin: no protocol, same policy (4..63 code points).
+  Result<void> set_pin_local(std::string_view pin);
   bool pin_set() const;
   std::uint8_t retries() const;
   void invalidate_token();

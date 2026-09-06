@@ -18,6 +18,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace swpk::ctap {
@@ -74,8 +75,11 @@ public:
   AuthenticatorMetrics metrics() const;
   const char* primary_backend_name() const;
 
-  // Control-socket entry points (PR12). `reset` still requires local UP.
+  // Control-socket entry points (PR12). Serialised against handle_cbor by an
+  // internal mutex; `reset` and `set_pin` still require local UP.
   Result<void> ctl_reset(CancelToken& cancel);
+  Result<void> ctl_set_pin(std::string_view pin, CancelToken& cancel);
+  Result<void> ctl_delete(std::span<const std::uint8_t> cred_id);
 
 private:
   struct PinAuthIn {
@@ -138,6 +142,7 @@ private:
   ui::Presence& presence_;
   mutable std::mutex metrics_mu_;
   AuthenticatorMetrics metrics_;
+  std::mutex op_mu_;  // one CTAP/U2F/ctl operation at a time
   std::unique_ptr<detail::AssertionState> next_state_;
   std::unique_ptr<detail::PinManager> pin_;
 };

@@ -2,6 +2,7 @@
 #include "swpasskey/crypto/key_backend.hpp"
 #include "swpasskey/crypto/provider.hpp"
 #include "swpasskey/ctap/authenticator.hpp"
+#include "swpasskey/ctl/server.hpp"
 #include "swpasskey/daemon/loop.hpp"
 #include "swpasskey/daemon/paths.hpp"
 #include "swpasskey/hid/transport.hpp"
@@ -34,6 +35,7 @@ constexpr std::string_view kUsage =
     "                                 (refused in RelWithDebInfo/Release)\n"
     "  --dek-file                     Keep the store DEK in credentials.bin.dek\n"
     "                                 (0600) instead of the OS keychain\n"
+    "  --ctl-socket PATH              Control socket for swpasskeyctl\n"
     "\n"
     "Env: SWPASSKEY_LOG=error|warn|info|debug, SWPASSKEY_TESTING=1,\n"
     "     SWPASSKEY_TPM_UNSAFE_NOTPMRM=1, SWPASSKEY_TPM_TCTI=<tcti> (default device:/dev/tpmrm0),\n"
@@ -62,6 +64,7 @@ struct Options {
   std::filesystem::path store;
   bool testing{false};
   bool dek_file{false};
+  std::filesystem::path ctl_socket;
 };
 
 }  // namespace
@@ -105,6 +108,14 @@ int main(int argc, char** argv) {
     }
     if (arg == "--dek-file") {
       opt.dek_file = true;
+      continue;
+    }
+    if (arg == "--ctl-socket" && i + 1 < argc) {
+      opt.ctl_socket = argv[++i];
+      continue;
+    }
+    if (arg.starts_with("--ctl-socket=")) {
+      opt.ctl_socket = std::string(arg.substr(std::strlen("--ctl-socket=")));
       continue;
     }
     std::fprintf(stderr, "swpasskeyd: unknown option '%s'\n", argv[i]);
@@ -209,6 +220,27 @@ int main(int argc, char** argv) {
 
   swpk::daemon::Loop loop(*transport, auth, crypto);
   g_loop = &loop;
+
+  // Control socket (swpasskeyctl).
+  if (opt.ctl_socket.empty()) {
+    if (const char* e = std::getenv("SWPASSKEY_CTL_SOCKET"); e != nullptr && *e != 0) {
+      opt.ctl_socket = e;
+    } else {
+      opt.ctl_socket = swpk::ctl::default_socket_path();
+    }
+  }
+  swpk::ctl::ServerDeps deps;
+  deps.auth = &auth;
+  deps.store = store.get();
+  deps.loop = &loop;
+  deps.key_backend = auth.primary_backend_name();
+  deps.probe_detail = probe_detail;
+  deps.quit = [&loop] { loop.stop(); };
+  swpk::ctl::UnixServer ctl(opt.ctl_socket, std::move(deps));
+  if (!ctl.start()) {
+    std::fputs("swpasskeyd: cannot create the control socket (see log)\n", stderr);
+    return 1;
+  }
   std::signal(SIGINT, on_signal);
   std::signal(SIGTERM, on_signal);
   std::signal(SIGPIPE, SIG_IGN);
@@ -223,6 +255,7 @@ int main(int argc, char** argv) {
                               {"keychain", keychain->name()}});
   const bool ok = loop.run();
   g_loop = nullptr;
+  ctl.stop();
   transport->close();
   swpk::log::info("shutdown", {{"clean", ok ? "true" : "false"}});
   return ok ? 0 : 1;

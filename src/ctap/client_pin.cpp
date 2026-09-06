@@ -123,6 +123,31 @@ PinManager::~PinManager() { invalidate_token(); }
 
 bool PinManager::pin_set() const { return store_.pin().hash.has_value(); }
 
+Result<void> PinManager::set_pin_local(std::string_view pin) {
+  std::size_t cps = 0;
+  for (char c : pin) {
+    if ((static_cast<unsigned char>(c) & 0xC0) != 0x80) {
+      ++cps;
+    }
+  }
+  if (pin.empty() || cps < 4 || cps > 63 || pin.size() > 63) {
+    return std::unexpected(Status::PinPolicyViolation);
+  }
+  const auto digest = crypto_.sha256(std::span<const std::uint8_t>(
+      reinterpret_cast<const std::uint8_t*>(pin.data()), pin.size()));
+  store::PinState st;
+  st.hash = std::array<std::uint8_t, 16>{};
+  std::memcpy(st.hash->data(), digest.data(), 16);
+  st.retries = kMaxRetries;
+  if (auto r = store_.set_pin(st); !r) {
+    return std::unexpected(Status::Other);
+  }
+  consecutive_failures_ = 0;
+  invalidate_token();
+  log::info("pin_set_local");
+  return {};
+}
+
 std::uint8_t PinManager::retries() const { return store_.pin().retries; }
 
 void PinManager::invalidate_token() {
