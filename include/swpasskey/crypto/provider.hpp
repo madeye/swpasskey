@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace swpk::crypto {
@@ -60,5 +61,18 @@ public:
   static Result<std::vector<std::uint8_t>> ecdsa_p256_der_normalize_low_s(
       std::span<const std::uint8_t> der);
 };
+
+// Derives the P-256 public point from a private scalar. Software keys only;
+// used to reload a scalar that was stored without its public key (the U2F
+// attestation key, PR11).
+Result<P256PublicKey> p256_pub_from_scalar(std::span<const std::uint8_t, 32> scalar);
+
+// Self-signed P-256 X.509 certificate (SHA-256, 20-year validity) over the
+// given software key. `subject_cn` becomes both the subject and the issuer CN.
+// Used once for the U2F batch-attestation certificate (DESIGN.md
+// "CTAP1/U2F (PR11)"): RPs that pin U2F attestation metadata will reject it.
+Result<std::vector<std::uint8_t>> make_self_signed_p256_cert(
+    std::span<const std::uint8_t, 32> scalar, const P256PublicKey& pub,
+    std::string_view subject_cn);
 
 }  // namespace swpk::crypto

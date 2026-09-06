@@ -158,9 +158,42 @@ Result<std::unique_ptr<SigningKey>> SoftwareKeyBackend::load(
   return std::make_unique<SoftwareSigningKey>(std::move(*p), pub, sca);
 }
 
+Result<P256PublicKey> p256_pub_from_scalar(std::span<const std::uint8_t, 32> scalar) {
+  EC_GROUP* group = EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1);
+  BIGNUM* d = BN_bin2bn(scalar.data(), 32, nullptr);
+  BN_CTX* ctx = BN_CTX_new();
+  EC_POINT* pt = group != nullptr ? EC_POINT_new(group) : nullptr;
+  P256PublicKey out{};
+  bool ok = group != nullptr && d != nullptr && ctx != nullptr && pt != nullptr &&
+            EC_POINT_mul(group, pt, d, nullptr, nullptr, ctx) == 1;
+  if (ok) {
+    BIGNUM* x = BN_new();
+    BIGNUM* y = BN_new();
+    ok = x != nullptr && y != nullptr &&
+         EC_POINT_get_affine_coordinates(group, pt, x, y, ctx) == 1 &&
+         BN_bn2binpad(x, out.x.data(), 32) == 32 && BN_bn2binpad(y, out.y.data(), 32) == 32;
+    BN_free(x);
+    BN_free(y);
+  }
+  EC_POINT_free(pt);
+  BN_CTX_free(ctx);
+  BN_clear_free(d);
+  EC_GROUP_free(group);
+  if (!ok) {
+    OPENSSL_cleanse(out.x.data(), out.x.size());
+    OPENSSL_cleanse(out.y.data(), out.y.size());
+    return std::unexpected(Status::Other);
+  }
+  return out;
+}
+
 Result<std::unique_ptr<SigningKey>> SoftwareKeyBackend::load_from_scalar(
     std::span<const std::uint8_t, 32> scalar) {
-  return load(scalar, P256PublicKey{});
+  auto pub = p256_pub_from_scalar(scalar);
+  if (!pub) {
+    return std::unexpected(pub.error());
+  }
+  return load(scalar, *pub);
 }
 
 Result<void> SoftwareKeyBackend::destroy(std::span<const std::uint8_t>) { return {}; }

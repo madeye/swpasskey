@@ -81,6 +81,9 @@ std::uint64_t Authenticator::now_unix() {
 GetInfoSnapshot Authenticator::get_info() const {
   GetInfoSnapshot s;
   s.versions = {"FIDO_2_1", "FIDO_2_0"};  // K24: PIN (PR9) + dual-credRandom hmac-secret (PR10)
+  if (cfg_.u2f_enabled) {
+    s.versions.emplace_back("U2F_V2");  // PR11; CTAP2 versions stay first
+  }
   s.extensions = {"hmac-secret"};
   s.aaguid = cfg_.aaguid;
   s.options.client_pin = pin_->pin_set();
@@ -268,14 +271,6 @@ Result<std::vector<std::uint8_t>> Authenticator::handle_cbor(
                      {"status", std::to_string(status)},
                      {"ms", std::to_string(ms.count())}});
   return r;
-}
-
-std::vector<std::uint8_t> Authenticator::handle_u2f(std::span<const std::uint8_t> request,
-                                                    CancelToken& cancel) {
-  (void)request;
-  (void)cancel;
-  // SW = 0x6D00 INS not supported until PR11.
-  return {0x6D, 0x00};
 }
 
 }  // namespace swpk::ctap

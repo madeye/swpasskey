@@ -8,6 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(BUILD_SHARED_LIBS OFF)
 
 option(SWPASSKEY_ITEST "Build libfido2 integration tests" OFF)
+option(SWPASSKEY_ENABLE_U2F "Enable CTAP1/U2F over CTAPHID_MSG" ON)
 
 include(cmake/CompilerFlags.cmake)
 
@@ -47,6 +48,7 @@ include(cmake/FindTss2.cmake)
 set(SWPK_CRYPTO_SOURCES
   src/crypto/openssl_provider.cpp
   src/crypto/software_key_backend.cpp
+  src/crypto/self_signed_cert.cpp
   src/crypto/probe.cpp)
 if(APPLE)
   list(APPEND SWPK_CRYPTO_SOURCES src/crypto/se_key_backend.mm)
@@ -65,8 +67,8 @@ if(SWPASSKEY_TPM)
   target_link_directories(swpasskey_crypto PUBLIC
     ${TSS2_ESYS_LIBRARY_DIRS} ${TSS2_TCTILDR_LIBRARY_DIRS} ${TSS2_MU_LIBRARY_DIRS} ${TSS2_RC_LIBRARY_DIRS})
 endif()
-set_source_files_properties(src/crypto/software_key_backend.cpp PROPERTIES
-  COMPILE_FLAGS -Wno-deprecated-declarations)
+set_source_files_properties(src/crypto/software_key_backend.cpp src/crypto/self_signed_cert.cpp
+  PROPERTIES COMPILE_FLAGS -Wno-deprecated-declarations)
 if(APPLE)
   set_source_files_properties(src/crypto/se_key_backend.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
   target_link_libraries(swpasskey_crypto PUBLIC "-framework Security" "-framework Foundation")
@@ -120,10 +122,16 @@ swpk_lib(swpasskey_ctap
   src/ctap/make_credential.cpp
   src/ctap/get_assertion.cpp
   src/ctap/client_pin.cpp
-  src/ctap/hmac_secret.cpp)
+  src/ctap/hmac_secret.cpp
+  src/ctap/u2f.cpp)
 target_link_libraries(swpasskey_ctap PUBLIC
   swpasskey_crypto swpasskey_store swpasskey_cbor swpasskey_ui swpasskey_log)
 swpasskey_disable_exceptions(swpasskey_ctap)
+if(SWPASSKEY_ENABLE_U2F)
+  # PUBLIC so the daemon (via swpasskey_daemon) sees it and can default
+  # AuthenticatorConfig::u2f_enabled to true.
+  target_compile_definitions(swpasskey_ctap PUBLIC SWPASSKEY_ENABLE_U2F=1)
+endif()
 
 # --- hid transports -----------------------------------------------------------
 if(APPLE)
@@ -167,6 +175,7 @@ add_executable(swpasskey_tests
   tests/make_credential_test.cpp
   tests/get_assertion_test.cpp
   tests/packed_self_attest_golden_test.cpp
+  tests/u2f_test.cpp
   tests/store_test.cpp
   tests/pin_test.cpp
   tests/hmac_secret_test.cpp

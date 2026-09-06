@@ -185,6 +185,9 @@ int main(int argc, char** argv) {
   }
 
   swpk::ctap::AuthenticatorConfig acfg;
+#if defined(SWPASSKEY_ENABLE_U2F) && SWPASSKEY_ENABLE_U2F
+  acfg.u2f_enabled = true;  // HID caps become CBOR|WINK; getInfo lists U2F_V2
+#endif
   swpk::ctap::Authenticator auth(acfg, crypto, *primary, software_ref, *store, *presence);
 
   swpk::hid::DeviceConfig dcfg;

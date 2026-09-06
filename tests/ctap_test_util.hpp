@@ -384,13 +384,20 @@ struct Rig {
   std::unique_ptr<ctap::Authenticator> auth;
   ctap::CancelToken tok;
 
-  explicit Rig(bool with_hw = false) {
+  explicit Rig(bool with_hw = false, bool u2f = false) {
     if (with_hw) hw = std::make_unique<FakeHwBackend>();
     ctap::AuthenticatorConfig cfg;
     cfg.up_timeout = std::chrono::milliseconds(200);
     cfg.pin_failure_delay_base = std::chrono::milliseconds(2);
     cfg.pin_token_idle_timeout = std::chrono::milliseconds(300);
+    cfg.u2f_enabled = u2f;
     auth = std::make_unique<ctap::Authenticator>(cfg, crypto, hw ? *hw : software, software, *store, presence);
+  }
+
+  // CTAP1/U2F over CTAPHID_MSG (PR11).
+  std::vector<std::uint8_t> u2f(const std::vector<std::uint8_t>& apdu) {
+    tok.reset();
+    return auth->handle_u2f(apdu, tok);
   }
 
   Result<std::vector<std::uint8_t>> call(const std::vector<std::uint8_t>& req) {

@@ -93,6 +93,11 @@ private:
   Result<std::vector<std::uint8_t>> cmd_client_pin(std::span<const std::uint8_t> body,
                                                    CancelToken& cancel);
 
+  // CTAP1/U2F (PR11). Both return a full response APDU (data || SW1 SW2).
+  std::vector<std::uint8_t> u2f_register(std::span<const std::uint8_t> data, CancelToken& cancel);
+  std::vector<std::uint8_t> u2f_authenticate(std::uint8_t p1, std::span<const std::uint8_t> data,
+                                             CancelToken& cancel);
+
   // Shared assertion builder used by getAssertion and getNextAssertion.
   Result<std::vector<std::uint8_t>> build_assertion(const store::Credential& cred,
                                                     std::span<const std::uint8_t, 32> rp_id_hash,
