@@ -1,4 +1,4 @@
-// macOS Keychain DEK item: service io.github.swpasskey, account dek.
+// macOS Keychain DEK item: service com.tangzixiang.swpasskey, account dek.
 // Uses the login keychain for an unbundled daemon; the data-protection
 // keychain + access group need the signed .app (DESIGN.md "Keychain schema").
 #if defined(__APPLE__)
@@ -14,7 +14,7 @@
 namespace swpk::store {
 namespace {
 
-constexpr const char* kService = "io.github.swpasskey";
+constexpr const char* kService = "com.tangzixiang.swpasskey";
 constexpr const char* kAccount = "dek";
 
 class MacKeychain final : public Keychain {

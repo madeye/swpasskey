@@ -45,7 +45,7 @@ public:
         @(kIOHIDMaxInputReportSizeKey) : @(kReportSize),
         @(kIOHIDMaxOutputReportSizeKey) : @(kReportSize),
       };
-      queue_ = dispatch_queue_create("io.github.swpasskey.iohid", DISPATCH_QUEUE_SERIAL);
+      queue_ = dispatch_queue_create("com.tangzixiang.swpasskey.iohid", DISPATCH_QUEUE_SERIAL);
       device_ = IOHIDUserDeviceCreateWithProperties(kCFAllocatorDefault,
                                                     (__bridge CFDictionaryRef)props, 0);
       if (device_ == nullptr) {

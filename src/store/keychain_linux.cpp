@@ -1,4 +1,4 @@
-// Linux DEK storage via libsecret (schema io.github.swpasskey.dek, attribute
+// Linux DEK storage via libsecret (schema com.tangzixiang.swpasskey.dek, attribute
 // install_id). Compiled only when SWPASSKEY_LIBSECRET is defined; otherwise
 // make_os_keychain() returns nullptr and the daemon uses the file fallback.
 #if defined(__linux__)
@@ -19,7 +19,7 @@ namespace {
 
 const SecretSchema* schema() {
   static const SecretSchema s = {
-      "io.github.swpasskey.dek",
+      "com.tangzixiang.swpasskey.dek",
       SECRET_SCHEMA_NONE,
       {
           {"install_id", SECRET_SCHEMA_ATTRIBUTE_STRING},

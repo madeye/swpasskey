@@ -8,7 +8,7 @@
   <true/>
   <key>keychain-access-groups</key>
   <array>
-    <string>$(AppIdentifierPrefix)io.github.swpasskey</string>
+    <string>$(AppIdentifierPrefix)com.tangzixiang.swpasskey</string>
   </array>
   <key>com.apple.security.get-task-allow</key>
   <true/>
