@@ -126,4 +126,4 @@ TPM object policy or the Secure Enclave ACL in v1.
 
 ## License
 
-All rights reserved until a license is chosen.
+[MIT](LICENSE) — Copyright (c) 2026 Max Lv.
