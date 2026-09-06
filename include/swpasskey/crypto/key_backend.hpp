@@ -42,6 +42,12 @@ public:
       std::span<const std::uint8_t> secret) = 0;
   virtual Result<std::vector<std::uint8_t>> unwrap_secret(
       std::span<const std::uint8_t> wrapped) = 0;
+  // Release whatever wrap_secret allocated outside the store (SE Keychain
+  // item). Default: nothing (TPM blobs and software secrets live in the store).
+  virtual Result<void> destroy_secret(std::span<const std::uint8_t> /*wrapped*/) { return {}; }
+  // After authenticatorReset: rebuild install-bound state (TPM primary from
+  // the freshly generated seed). Default: nothing.
+  virtual Result<void> reinit_after_reset() { return {}; }
 };
 
 class SoftwareKeyBackend final : public KeyBackend {

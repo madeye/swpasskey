@@ -205,6 +205,28 @@ public:
     }
   }
 
+  Result<void> destroy_secret(std::span<const std::uint8_t> wrapped) override {
+    @autoreleasepool {
+      if (wrapped.empty()) {
+        return {};
+      }
+      NSDictionary* q = @{
+        (id)kSecClass : (id)kSecClassGenericPassword,
+        (id)kSecAttrService : @(kHmacService),
+        (id)kSecAttrAccount : [[NSString alloc] initWithBytes:wrapped.data()
+                                                       length:wrapped.size()
+                                                     encoding:NSUTF8StringEncoding],
+        (id)kSecUseDataProtectionKeychain : @YES,
+      };
+      const OSStatus st = SecItemDelete((__bridge CFDictionaryRef)q);
+      if (st != errSecSuccess && st != errSecItemNotFound) {
+        log::warn("se_destroy_secret_failed", {{"osstatus", std::to_string(st)}});
+        return std::unexpected(Status::Other);
+      }
+      return {};
+    }
+  }
+
   Result<std::vector<std::uint8_t>> unwrap_secret(std::span<const std::uint8_t> wrapped) override {
     @autoreleasepool {
       NSDictionary* q = @{

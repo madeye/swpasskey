@@ -282,3 +282,48 @@ TEST_CASE("file keychain and fallback", "[store][keychain]") {
   REQUIRE(std::filesystem::exists(d / "n.dek"));
   std::filesystem::remove_all(d);
 }
+
+namespace {
+class FailingPersister final : public Persister {
+public:
+  bool fail{false};
+  int saves{0};
+  Result<void> save(std::span<const std::uint8_t>) override {
+    ++saves;
+    if (fail) return std::unexpected(Status::Other);
+    return {};
+  }
+};
+}  // namespace
+
+TEST_CASE("put/erase roll back when the flush fails", "[store]") {
+  crypto::Provider p;
+  auto fp = std::make_unique<FailingPersister>();
+  auto* fpp = fp.get();
+  auto s = *CredentialStore::open_with({}, std::move(fp));
+  REQUIRE(s->put(sw_cred(p, 1)).has_value());
+  fpp->fail = true;
+  REQUIRE_FALSE(s->put(sw_cred(p, 2)).has_value());
+  REQUIRE(s->size() == 1);
+  std::array<std::uint8_t, 32> one{};
+  one.fill(1);
+  REQUIRE_FALSE(s->erase(one).has_value());
+  REQUIRE(s->size() == 1);
+  fpp->fail = false;
+  REQUIRE(s->erase(one).has_value());
+  REQUIRE(s->size() == 0);
+}
+
+TEST_CASE("find_by_rp excludes non-rk (U2F) rows; find() still reaches them", "[store]") {
+  crypto::Provider p;
+  auto s = CredentialStore::open_memory();
+  auto u = sw_cred(p, 5);
+  u.rk = false;
+  u.user_id.clear();
+  REQUIRE(s->put(u).has_value());
+  REQUIRE(s->find_by_rp(u.rp_id_hash).empty());
+  REQUIRE(s->find(u.rp_id_hash, u.cred_id).has_value());
+  auto pt = s->serialize();
+  auto s2 = *CredentialStore::open_with(pt, nullptr);
+  REQUIRE(s2->find_by_id(u.cred_id)->rk == false);
+}

@@ -246,9 +246,19 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_make_credential(
     c.cred_random = std::move(*wrapped);
   }
 
+  // CTAP 2.1 §6.1.2: a new discoverable credential for the same rp.id +
+  // user.id replaces the old one.
+  for (const auto& old : store_.find_by_rp(rp_id_hash)) {
+    if (old.user_id == c.user_id) {
+      destroy_key(old);
+      (void)store_.erase(old.cred_id);
+      log::info("make_credential_replaced", {{"rp", c.rp_id}});
+    }
+  }
+
   // Persist before any success response leaves the worker.
   if (auto p = store_.put(c); !p) {
-    (void)primary_.destroy(c.handle);
+    destroy_key(c);
     return fail(p.error() == Status::KeyStoreFull ? Status::KeyStoreFull : Status::Other);
   }
 

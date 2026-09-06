@@ -38,6 +38,7 @@ struct Credential {
   std::uint64_t created_unix{};
   std::uint64_t last_used_unix{};
   std::vector<std::uint8_t> cred_random;  // wrap_secret output (64 B dual credRandom)
+  bool rk{true};  // false for CTAP1/U2F registrations (never enumerated by rpId)
 };
 
 struct PinState {
@@ -82,6 +83,7 @@ public:
 
   // Credentials
   Result<void> put(Credential c);
+  // Discoverable (rk) credentials for an RP; U2F rows are excluded.
   std::vector<Credential> find_by_rp(std::span<const std::uint8_t, 32> rp_id_hash) const;
   std::optional<Credential> find(std::span<const std::uint8_t, 32> rp_id_hash,
                                  std::span<const std::uint8_t> cred_id) const;

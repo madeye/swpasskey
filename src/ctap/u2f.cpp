@@ -214,6 +214,7 @@ std::vector<std::uint8_t> Authenticator::u2f_register(std::span<const std::uint8
   }
 
   store::Credential c;
+  c.rk = false;  // U2F key handle: never enumerated by CTAP2 discoverable flows
   c.rp_id = rp_id;
   c.rp_id_hash = application;
   if (!crypto_.random(c.cred_id)) {  // the key handle
@@ -265,7 +266,7 @@ std::vector<std::uint8_t> Authenticator::u2f_register(std::span<const std::uint8
 
   // Persist before the response leaves the worker.
   if (auto p = store_.put(c); !p) {
-    (void)primary_.destroy(c.handle);
+    destroy_key(c);
     return sw(kSwExecutionError);
   }
 

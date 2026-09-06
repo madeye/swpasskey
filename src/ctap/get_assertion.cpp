@@ -144,7 +144,9 @@ Result<std::vector<std::uint8_t>> Authenticator::build_assertion(
   resp.emplace_back(Writer::encode_uint(1), detail::encode_descriptor(cred.cred_id));
   resp.emplace_back(Writer::encode_uint(2), Writer::encode_bstr(auth_data));
   resp.emplace_back(Writer::encode_uint(3), Writer::encode_bstr(*sig));
-  resp.emplace_back(Writer::encode_uint(4), detail::encode_user(user, uv));
+  if (!user.id.empty()) {  // U2F rows have no user handle; never emit an empty one
+    resp.emplace_back(Writer::encode_uint(4), detail::encode_user(user, uv));
+  }
   if (number_of_credentials.has_value() && *number_of_credentials > 1) {
     resp.emplace_back(Writer::encode_uint(5), Writer::encode_uint(*number_of_credentials));
   }
@@ -179,21 +181,27 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_get_assertion(
                                     q->rp_id.size()));
 
   // Candidate credentials: all for this RP, filtered by allowList when present.
-  std::vector<store::Credential> creds = store_.find_by_rp(rp_id_hash);
+  std::vector<store::Credential> creds;
   if (q->allow_list.has_value() && !q->allow_list->empty()) {
-    std::vector<store::Credential> filtered;
+    // Each stored credential at most once, even if the allowList repeats it.
+    // U2F (non-rk) rows are reachable here by key handle, as on hardware keys.
     for (const auto& d : *q->allow_list) {
       if (d.type != "public-key") {
         continue;
       }
-      for (const auto& c : creds) {
-        if (d.id.size() == c.cred_id.size() &&
-            std::memcmp(d.id.data(), c.cred_id.data(), d.id.size()) == 0) {
-          filtered.push_back(c);
-        }
+      auto c = store_.find(rp_id_hash, d.id);
+      if (!c) {
+        continue;
+      }
+      const bool seen = std::any_of(creds.begin(), creds.end(), [&](const auto& e) {
+        return e.cred_id == c->cred_id;
+      });
+      if (!seen) {
+        creds.push_back(std::move(*c));
       }
     }
-    creds = std::move(filtered);
+  } else {
+    creds = store_.find_by_rp(rp_id_hash);  // discoverable rows only
   }
 
   // PIN / UV (PR9): optional on getAssertion (alwaysUv=false).

@@ -208,8 +208,12 @@ TEST_CASE("HW row fails closed when the probed backend differs", "[ga]") {
 
 TEST_CASE("reset requires UP and wipes everything", "[reset]") {
   Rig rig(true);
-  rig.register_cred();
-  rig.register_cred();
+  MakeCredOpts a;
+  a.user_id = bytes({1});
+  MakeCredOpts b;
+  b.user_id = bytes({2});
+  rig.register_cred(a);
+  rig.register_cred(b);
   const std::uint8_t reset[] = {ctap::kCmdReset};
   rig.presence.next = ui::Decision::Deny;
   REQUIRE(rig.call(std::vector<std::uint8_t>(reset, reset + 1)).error() == Status::OperationDenied);
@@ -221,4 +225,47 @@ TEST_CASE("reset requires UP and wipes everything", "[reset]") {
   REQUIRE(rig.store->size() == 0);
   REQUIRE(static_cast<FakeHwBackend*>(rig.hw.get())->destroys == 2);
   REQUIRE(rig.presence.seen.back().kind == ui::PresenceRequest::Kind::Reset);
+}
+
+TEST_CASE("makeCredential for the same rp.id + user.id replaces the old credential", "[mc]") {
+  Rig rig(true);
+  auto first = rig.register_cred();
+  auto second = rig.register_cred();
+  REQUIRE(first != second);
+  REQUIRE(rig.store->size() == 1);
+  REQUIRE_FALSE(rig.store->find_by_id(first).has_value());
+  REQUIRE(static_cast<FakeHwBackend*>(rig.hw.get())->destroys == 1);
+  MakeCredOpts other;
+  other.user_id = bytes({9});
+  rig.register_cred(other);
+  REQUIRE(rig.store->size() == 2);
+}
+
+TEST_CASE("allowList duplicates yield one assertion", "[ga]") {
+  Rig rig;
+  auto id = rig.register_cred();
+  GetAssertOpts o;
+  o.allow = std::vector<std::vector<std::uint8_t>>{id, id, id};
+  auto r = rig.call(get_assert_request(o));
+  REQUIRE(r.has_value());
+  REQUIRE_FALSE(parse_assertion(*r).number.has_value());
+  const std::uint8_t next[] = {ctap::kCmdGetNextAssertion};
+  REQUIRE(rig.call(std::vector<std::uint8_t>(next, next + 1)).error() == Status::NotAllowed);
+}
+
+TEST_CASE("any other command invalidates the getNextAssertion state", "[ga]") {
+  Rig rig;
+  MakeCredOpts a;
+  a.user_id = bytes({1});
+  rig.register_cred(a);
+  MakeCredOpts b;
+  b.user_id = bytes({2});
+  rig.register_cred(b);
+  GetAssertOpts o;
+  auto r = rig.call(get_assert_request(o));
+  REQUIRE(parse_assertion(*r).number == 2);
+  const std::uint8_t gi[] = {ctap::kCmdGetInfo};
+  REQUIRE(rig.call(std::vector<std::uint8_t>(gi, gi + 1)).has_value());
+  const std::uint8_t next[] = {ctap::kCmdGetNextAssertion};
+  REQUIRE(rig.call(std::vector<std::uint8_t>(next, next + 1)).error() == Status::NotAllowed);
 }

@@ -257,13 +257,19 @@ Result<void> PinManager::check_pin_hash(const SharedSecret& ss,
   if (!got || got->size() != 16) {
     return std::unexpected(Status::PinAuthInvalid);
   }
+  // CTAP 2.1 §6.5.5.7: decrement and persist BEFORE comparing, so a crash or
+  // a failed flush can never yield a free guess. Restore on success.
+  pin.retries = static_cast<std::uint8_t>(pin.retries - 1);
+  if (auto w = store_.set_pin(pin); !w) {
+    OPENSSL_cleanse(got->data(), got->size());
+    log::error("pin_retry_persist_failed");
+    return std::unexpected(Status::Other);  // fail closed: no verification without durable retries
+  }
   const bool ok = crypto_.consttime_equal(*got, *pin.hash);
   OPENSSL_cleanse(got->data(), got->size());
   if (!ok) {
     ++pin_fail_;
     ++consecutive_failures_;
-    pin.retries = static_cast<std::uint8_t>(pin.retries - 1);
-    (void)store_.set_pin(pin);
     (void)regenerate_key_agreement();  // spec: new key agreement after a failure
     log::warn("pin_invalid", {{"retries", std::to_string(pin.retries)}});
     if (pin.retries == 0) {

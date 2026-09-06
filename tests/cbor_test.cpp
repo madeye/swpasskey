@@ -58,3 +58,14 @@ TEST_CASE("integer map keys round-trip", "[cbor]") {
   REQUIRE(r.uint().value() == 2);
   REQUIRE(r.uint().value() == 0);
 }
+
+TEST_CASE("Reader::skip rejects absurd nesting instead of recursing", "[cbor]") {
+  std::vector<std::uint8_t> deep(5000, 0x81);  // array(1) array(1) ...
+  deep.push_back(0x00);
+  swpk::cbor::Reader r(deep);
+  REQUIRE_FALSE(r.skip().has_value());
+  std::vector<std::uint8_t> ok = {0x81, 0x81, 0x81, 0x81, 0x00};
+  swpk::cbor::Reader r2(ok);
+  REQUIRE(r2.skip().has_value());
+  REQUIRE(r2.done());
+}

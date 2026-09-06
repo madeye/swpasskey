@@ -347,3 +347,30 @@ TEST_CASE("u2f enabled advertises U2F_V2 after the CTAP2 versions") {
   const auto info = rig.auth->get_info();
   REQUIRE(info.versions == std::vector<std::string>{"FIDO_2_1", "FIDO_2_0", "U2F_V2"});
 }
+
+TEST_CASE("u2f rows stay out of CTAP2 discoverable flows but work via allowList") {
+  Rig rig(false, true);
+  const auto challenge = fill(0xC1);
+  // application == SHA-256("example.com"), the CTAP1-fallback mapping.
+  const auto app_hash = rig.crypto.sha256(std::span<const std::uint8_t>(
+      reinterpret_cast<const std::uint8_t*>("example.com"), 11));
+  const std::array<std::uint8_t, 32>& application = app_hash;
+  auto r = rig.u2f(apdu_ext(kInsRegister, 0x00, reg_data(challenge, application)));
+  REQUIRE(status_of(r) == 0x9000);
+  const auto reg = parse_registration(body_of(r));
+  auto row = rig.store->find_by_id(reg.key_handle);
+  REQUIRE(row.has_value());
+  REQUIRE_FALSE(row->rk);
+
+  // Discoverable getAssertion for example.com does not see it.
+  GetAssertOpts g;
+  REQUIRE(rig.call(get_assert_request(g)).error() == Status::NoCredentials);
+  // allowList with the key handle does, and the response carries no user entity.
+  g.allow = std::vector<std::vector<std::uint8_t>>{reg.key_handle};
+  auto a = rig.call(get_assert_request(g));
+  REQUIRE(a.has_value());
+  auto m = split_int_map(*a);
+  REQUIRE(m.count(4) == 0);
+  // A CTAP2 registration for the same RP is not blocked by the U2F row.
+  REQUIRE(rig.call(make_cred_request({})).has_value());
+}

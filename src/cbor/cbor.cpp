@@ -247,7 +247,12 @@ Result<std::uint8_t> Reader::peek_major() const {
   return static_cast<std::uint8_t>(in_[off_] >> 5);
 }
 
-Result<void> Reader::skip() {
+constexpr unsigned kMaxSkipDepth = 32;
+
+Result<void> Reader::skip_depth(unsigned depth) {
+  if (depth > kMaxSkipDepth) {
+    return std::unexpected(Status::InvalidCbor);
+  }
   auto h = take_head();
   if (!h) {
     return std::unexpected(h.error());
@@ -266,7 +271,7 @@ Result<void> Reader::skip() {
     }
     case 4: {
       for (std::uint64_t i = 0; i < h->second; ++i) {
-        if (auto r = skip(); !r) {
+        if (auto r = skip_depth(depth + 1); !r) {
           return r;
         }
       }
@@ -274,17 +279,17 @@ Result<void> Reader::skip() {
     }
     case 5: {
       for (std::uint64_t i = 0; i < h->second; ++i) {
-        if (auto r = skip(); !r) {
+        if (auto r = skip_depth(depth + 1); !r) {
           return r;
         }
-        if (auto r = skip(); !r) {
+        if (auto r = skip_depth(depth + 1); !r) {
           return r;
         }
       }
       return {};
     }
     case 6:
-      return skip();  // tag: skip the tagged item
+      return skip_depth(depth + 1);  // tag: skip the tagged item
     case 7:
       // Simple values / floats: the head already consumed the argument bytes
       // for ai 24..27 (bool/null are ai 20/21/22 with no extra).

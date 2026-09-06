@@ -47,7 +47,7 @@ public:
   Result<std::size_t> map();
   Result<std::size_t> array();
   // Skip one complete data item (any type, nested). For unknown map keys.
-  Result<void> skip();
+  Result<void> skip() { return skip_depth(0); }
   // Peek the major type of the next item (0..7) without consuming it.
   Result<std::uint8_t> peek_major() const;
   std::size_t offset() const { return off_; }
@@ -57,6 +57,7 @@ private:
   std::span<const std::uint8_t> in_;
   std::size_t off_{0};
   Result<std::pair<std::uint8_t, std::uint64_t>> take_head();
+  Result<void> skip_depth(unsigned depth);
   Result<std::span<const std::uint8_t>> take_bytes(std::uint64_t n);
 };
 

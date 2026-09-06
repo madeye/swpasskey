@@ -194,8 +194,10 @@ Result<std::unique_ptr<crypto::SigningKey>> Authenticator::load_key(const store:
 void Authenticator::destroy_key(const store::Credential& c) {
   if (c.backend == crypto::BackendKind::Software) {
     (void)software_.destroy(c.priv);
+    (void)software_.destroy_secret(c.cred_random);
   } else if (primary_.kind() == c.backend) {
     (void)primary_.destroy(c.handle);
+    (void)primary_.destroy_secret(c.cred_random);
   } else {
     log::warn("destroy_skipped_backend_unavailable", {{"backend", backend_name(c.backend)}});
   }
@@ -219,6 +221,10 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_reset(CancelToken& cancel) 
     return std::unexpected(Status::Other);
   }
   (void)pin_->regenerate_key_agreement();  // drops the token and the ECDH key
+  if (auto ri = primary_.reinit_after_reset(); !ri) {
+    log::error("key_backend_reinit_failed", {{"backend", primary_backend_name()}});
+    return std::unexpected(Status::Other);
+  }
   log::warn("factory_reset");
   return std::vector<std::uint8_t>{};
 }
@@ -268,6 +274,9 @@ Result<std::vector<std::uint8_t>> Authenticator::handle_cbor(
   const std::uint8_t cmd = request[0];
   const auto body = request.subspan(1);
   const auto t0 = std::chrono::steady_clock::now();
+  if (cmd != kCmdGetNextAssertion) {
+    next_state_.reset();  // CTAP 2.1: any other command invalidates the pending list
+  }
   Result<std::vector<std::uint8_t>> r;
   switch (cmd) {
     case kCmdGetInfo:

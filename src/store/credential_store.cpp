@@ -48,7 +48,7 @@ std::vector<std::uint8_t> encode_credential(const Credential& c) {
   put_u("created", c.created_unix);
   put_u("last_used", c.last_used_unix);
   put_b("cred_random", c.cred_random);
-  m.emplace_back(Writer::encode_tstr("rk"), Writer::encode_bool(true));
+  m.emplace_back(Writer::encode_tstr("rk"), Writer::encode_bool(c.rk));
   Writer w;
   w.write_map(std::move(m));
   return w.finish();
@@ -137,6 +137,10 @@ Result<Credential> decode_credential(Reader& r) {
       auto v = r.bstr();
       if (!v) return std::unexpected(v.error());
       c.cred_random = *v;
+    } else if (k == "rk") {
+      auto v = r.boolean();
+      if (!v) return std::unexpected(v.error());
+      c.rk = *v;
     } else {
       rc = r.skip();
     }
@@ -351,14 +355,24 @@ Result<void> CredentialStore::put(Credential c) {
   auto it = std::find_if(creds_.begin(), creds_.end(),
                          [&](const Credential& e) { return e.cred_id == c.cred_id; });
   if (it != creds_.end()) {
+    Credential old = *it;
     *it = std::move(c);
-    return flush_locked();
+    if (auto r = flush_locked(); !r) {
+      *it = std::move(old);  // roll back: nothing changed on disk
+      return r;
+    }
+    return {};
   }
   if (creds_.size() >= kMaxCredentials) {
     return std::unexpected(Status::KeyStoreFull);
   }
   creds_.push_back(std::move(c));
-  return flush_locked();
+  if (auto r = flush_locked(); !r) {
+    OPENSSL_cleanse(creds_.back().priv.data(), creds_.back().priv.size());
+    creds_.pop_back();
+    return r;
+  }
+  return {};
 }
 
 std::vector<Credential> CredentialStore::find_by_rp(
@@ -366,7 +380,7 @@ std::vector<Credential> CredentialStore::find_by_rp(
   std::lock_guard<std::mutex> lk(mu_);
   std::vector<Credential> out;
   for (const auto& c : creds_) {
-    if (same_id(c.rp_id_hash, rp_id_hash)) {
+    if (c.rk && same_id(c.rp_id_hash, rp_id_hash)) {
       out.push_back(c);
     }
   }
@@ -415,9 +429,14 @@ Result<void> CredentialStore::erase(std::span<const std::uint8_t> cred_id) {
   if (it == creds_.end()) {
     return std::unexpected(Status::InvalidCredential);
   }
-  OPENSSL_cleanse(it->priv.data(), it->priv.size());
+  Credential removed = std::move(*it);
   creds_.erase(it);
-  return flush_locked();
+  if (auto r = flush_locked(); !r) {
+    creds_.push_back(std::move(removed));  // roll back
+    return r;
+  }
+  OPENSSL_cleanse(removed.priv.data(), removed.priv.size());
+  return {};
 }
 
 std::vector<Credential> CredentialStore::all() const {

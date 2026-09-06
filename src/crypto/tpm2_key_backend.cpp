@@ -17,6 +17,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <unistd.h>
@@ -189,6 +190,32 @@ public:
   ~Tpm2KeyBackend() override { shutdown(); }
 
   BackendKind kind() const override { return BackendKind::Tpm2; }
+
+  void set_params_provider(std::function<Result<Tpm2Params>()> f) { params_provider_ = std::move(f); }
+
+  // Reset wiped srk_unique_seed / object_auth in the store; fetch the new
+  // ones and rebuild the primary so new children are wrapped under it.
+  Result<void> reinit_after_reset() override {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!params_provider_) {
+      return std::unexpected(Status::Other);
+    }
+    auto params = params_provider_();
+    if (!params) {
+      return std::unexpected(params.error());
+    }
+    const std::string tcti = tcti_name_;
+    shutdown();
+    std::string why;
+    auto r = init(tcti, *params, why);
+    OPENSSL_cleanse(&*params, sizeof(*params));
+    if (!r) {
+      log::error("tpm_reinit_failed", {{"err", why}});
+    } else {
+      log::info("tpm_reinit_after_reset", {{"detail", why}});
+    }
+    return r;
+  }
 
   // Connects, creates the install-bound primary. `why` carries the reason.
   Result<void> init(const std::string& tcti, const Tpm2Params& params, std::string& why) {
@@ -482,6 +509,7 @@ private:
   ESYS_TR primary_{ESYS_TR_NONE};
   Tpm2Params params_{};
   std::string tcti_name_;
+  std::function<Result<Tpm2Params>()> params_provider_;
 };
 
 Result<std::vector<std::uint8_t>> Tpm2SigningKey::sign_der(
@@ -526,6 +554,7 @@ std::unique_ptr<KeyBackend> make_tpm2_key_backend(const ProbeOptions& opt, std::
     if (b->init(t, *params, reason)) {
       why = reason;
       OPENSSL_cleanse(&*params, sizeof(*params));
+      b->set_params_provider(opt.tpm_params);
       return b;
     }
     why = reason;
