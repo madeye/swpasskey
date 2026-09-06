@@ -119,8 +119,8 @@ std::string stats_json(ServerDeps& deps) {
     w.object("errors");
     for (std::size_t i = 1; i < m.ctap_status.size(); ++i) {
       if (m.ctap_status[i] != 0) {
-        char key[8];
-        std::snprintf(key, sizeof(key), "0x%02zx", i);
+        char key[16];
+        std::snprintf(key, sizeof(key), "0x%02x", static_cast<unsigned>(i));
         w.num(key, m.ctap_status[i]);
       }
     }
