@@ -59,7 +59,7 @@ swpk::daemon::Loop* g_loop = nullptr;
 
 void on_signal(int) {
   if (g_loop != nullptr) {
-    g_loop->stop();
+    g_loop->request_stop();  // signal-safe; no locks
   }
 }
 

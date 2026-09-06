@@ -39,6 +39,9 @@ public:
   // the transport fails. Returns false on transport failure.
   bool run();
   void stop();
+  // Async-signal-safe: only flips the stop flag; run() notices within one
+  // read timeout and performs the full stop() itself.
+  void request_stop() noexcept { stop_.store(true, std::memory_order_release); }
 
   Stats stats() const;
   const ctap::HidDevice& device() const { return device_; }
