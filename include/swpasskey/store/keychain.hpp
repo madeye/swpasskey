@@ -25,8 +25,8 @@ public:
   virtual const char* name() const = 0;
 };
 
-// macOS Keychain (service io.github.swpasskey, account dek) or Linux
-// libsecret (schema io.github.swpasskey.dek, attr install_id). Returns
+// macOS Keychain (service com.tangzixiang.swpasskey, account dek) or Linux
+// libsecret (schema com.tangzixiang.swpasskey.dek, attr install_id). Returns
 // nullptr when the platform backend was not compiled in.
 std::unique_ptr<Keychain> make_os_keychain();
 

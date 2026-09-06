@@ -484,7 +484,7 @@ IOHIDUserDeviceHandleReport(dev, report, 64);
 
 Restricted entitlements (`com.apple.developer.hid.virtual.device`, `keychain-access-groups`) **require a paid-team provisioning profile**. Ad-hoc `codesign --sign -` with those keys in the plist is an AMFI kill (`no eligible provisioning profiles`), not a NULL `IOHIDUserDeviceCreate`. `keychain-access-groups` on an unbundled CLI does not match how Chromium’s `.app` uses SE. `UNUserNotificationCenter` actionable categories need an `Info.plist` bundle ID.
 
-v1 macOS HID/SE/notifications therefore ship as a **tiny `.app`** (`swpasskeyd.app`, bundle ID `io.github.swpasskey.daemon`) signed with a development or Developer ID profile — **not** a naked terminal binary. The PR3 spike must use that `.app` + paid-team profile. **Linux is the hard v1 gate** if Apple denies the entitlement (K26).
+v1 macOS HID/SE/notifications therefore ship as a **tiny `.app`** (`swpasskeyd.app`, bundle ID `com.tangzixiang.swpasskey.daemon`) signed with a development or Developer ID profile — **not** a naked terminal binary. The PR3 spike must use that `.app` + paid-team profile. **Linux is the hard v1 gate** if Apple denies the entitlement (K26).
 
 Split entitlements:
 
@@ -502,7 +502,7 @@ Split entitlements:
   <true/>
   <key>keychain-access-groups</key>
   <array>
-    <string>$(AppIdentifierPrefix)io.github.swpasskey</string>
+    <string>$(AppIdentifierPrefix)com.tangzixiang.swpasskey</string>
   </array>
 </dict>
 </plist>
@@ -653,7 +653,7 @@ SecAccessControlRef ac = SecAccessControlCreateWithFlags(
     kSecAccessControlPrivateKeyUsage,   // NOT UserPresence, NOT BiometryAny
     &err);
 
-NSData *tag = /* "io.github.swpasskey.se." + 32-byte cred_id hex */;
+NSData *tag = /* "com.tangzixiang.swpasskey.se." + 32-byte cred_id hex */;
 
 NSDictionary *attrs = @{
   (id)kSecAttrTokenID: (id)kSecAttrTokenIDSecureEnclave,
@@ -665,7 +665,7 @@ NSDictionary *attrs = @{
     (id)kSecAttrApplicationTag: tag,
     (id)kSecAttrAccessControl: (__bridge id)ac,
     (id)kSecUseDataProtectionKeychain: @YES,
-    (id)kSecAttrAccessGroup: @"$(AppIdentifierPrefix)io.github.swpasskey",
+    (id)kSecAttrAccessGroup: @"$(AppIdentifierPrefix)com.tangzixiang.swpasskey",
   },
 };
 SecKeyRef priv = SecKeyCreateRandomKey((__bridge CFDictionaryRef)attrs, &error);
@@ -684,7 +684,7 @@ FIDO packed/assertion signs `SHA-256(authenticatorData || clientDataHash)` then 
 
 Destroy: `SecItemDelete` with the same tag. Factory reset iterates all tags with label `swpasskey` in our access group.
 
-`wrap_secret`: `SecItemAdd` a `kSecClassGenericPassword` with account `hmac.<cred_id_hex>`, service `io.github.swpasskey`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, same access group. Handle = the account string. Honest: this is Keychain Data Protection, not an SE wrapping key. ECIES-to-the-credential-SE-key is a v1.1 upgrade if we want the hmac secret to die with the SE key itself.
+`wrap_secret`: `SecItemAdd` a `kSecClassGenericPassword` with account `hmac.<cred_id_hex>`, service `com.tangzixiang.swpasskey`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, same access group. Handle = the account string. Honest: this is Keychain Data Protection, not an SE wrapping key. ECIES-to-the-credential-SE-key is a v1.1 upgrade if we want the hmac secret to die with the SE key itself.
 
 Prior art: Chromium [`crypto/unexportable_key_mac.mm`](https://source.chromium.org/chromium/chromium/src/+/main:crypto/unexportable_key_mac.mm); Apple [Protecting keys with the Secure Enclave](https://developer.apple.com/documentation/security/protecting-keys-with-the-secure-enclave). Apple DTS: material is SE-wrapped/operated, **not** a FIDO-certified batch attestation.
 
@@ -1309,7 +1309,7 @@ Greenfield. On-disk layout is the data model.
 | Store | `$XDG_DATA_HOME/swpasskey/credentials.bin` | `~/Library/Application Support/swpasskey/credentials.bin` |
 | Serial sidecar (PR3, before store) | `$XDG_DATA_HOME/swpasskey/serial` (0600, 16 hex chars) | `~/Library/Application Support/swpasskey/serial` |
 | Instance lock | `flock` on `credentials.bin` once PR5 exists; until then `flock` `$XDG_RUNTIME_DIR/swpasskey/swpasskeyd.lock` | same, under Application Support / `$TMPDIR` |
-| DEK | libsecret schema `io.github.swpasskey.dek` (attr `install_id`); fallback file `credentials.bin.dek` mode 0600 | Keychain service `io.github.swpasskey`, account `dek` |
+| DEK | libsecret schema `com.tangzixiang.swpasskey.dek` (attr `install_id`); fallback file `credentials.bin.dek` mode 0600 | Keychain service `com.tangzixiang.swpasskey`, account `dek` |
 | Logs | stderr; optional `$XDG_STATE_HOME/swpasskey/swpasskeyd.log` | stderr; optional `~/Library/Logs/swpasskey/swpasskeyd.log` |
 | Config | **none in v1** (CLI + env only, K28) | **none in v1** |
 
@@ -1432,9 +1432,9 @@ private:
 
 ### Keychain schema
 
-- macOS DEK: `SecItemAdd` / `SecItemCopyMatching` with `kSecClassGenericPassword`, `kSecAttrService = "io.github.swpasskey"`, `kSecAttrAccount = "dek"`, `kSecAttrAccessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, access group `io.github.swpasskey`.
+- macOS DEK: `SecItemAdd` / `SecItemCopyMatching` with `kSecClassGenericPassword`, `kSecAttrService = "com.tangzixiang.swpasskey"`, `kSecAttrAccount = "dek"`, `kSecAttrAccessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, access group `com.tangzixiang.swpasskey`.
 - macOS SE keys: `kSecClassKey` + `kSecAttrApplicationTag` as above.
-- Linux: libsecret schema `org.freedesktop.Secret.Generic` with attributes `{ "xdg:schema": "io.github.swpasskey.dek", "install_id": "<hex>" }`. If libsecret is absent or the collection is locked, fall back to `credentials.bin.dek` mode 0600 containing the raw 32-byte DEK — **log a warning**. This fallback is weaker for **software** creds and for metadata; TPM-wrapped private keys remain inert without the TPM.
+- Linux: libsecret schema `org.freedesktop.Secret.Generic` with attributes `{ "xdg:schema": "com.tangzixiang.swpasskey.dek", "install_id": "<hex>" }`. If libsecret is absent or the collection is locked, fall back to `credentials.bin.dek` mode 0600 containing the raw 32-byte DEK — **log a warning**. This fallback is weaker for **software** creds and for metadata; TPM-wrapped private keys remain inert without the TPM.
 
 **Serial stability (PR3 vs PR5):** PR3 creates the HID device **before** the encrypted store exists. It writes a 16-hex-char serial to the sidecar `serial` (0600) next to the eventual store path, generating only if the file is absent. PR5 imports that serial into the inner CBOR `serial` field and **never regenerates**. UHID `uniq` / IOHID `kIOHIDSerialNumberKey` always read the sidecar.
 
@@ -1852,7 +1852,7 @@ swpasskey/
     macos/swpasskeyd.entitlements          # release, no get-task-allow
     macos/swpasskeyd.debug.entitlements    # + get-task-allow
     macos/swpasskeyd.app/                  # minimal bundle from PR3
-    macos/io.github.swpasskeyd.plist     # later
+    macos/com.tangzixiang.swpasskeyd.plist     # later
     clang-tidy/.clang-tidy
   third_party/          # empty; deps via FetchContent
   .github/workflows/ci.yml
@@ -2148,7 +2148,7 @@ Live board (done / next / pending, branches, deviations): **[`STATUS.md`](STATUS
 ### PR13 — Packaging (optional, trails v1)
 
 - **Title:** `chore: udev, systemd --user unit, launchd LaunchAgent`
-- **Files:** `packaging/linux/systemd/swpasskeyd.service`, `packaging/macos/io.github.swpasskeyd.plist`, README
+- **Files:** `packaging/linux/systemd/swpasskeyd.service`, `packaging/macos/com.tangzixiang.swpasskeyd.plist`, README
 - **Depends on:** PR3 + working non-TTY presence on that OS (PR8)
 - **Description:** User units, no root daemon. **Do not** enable a headless user unit until presence works. Document `plugdev` + `tss` (distro TPM udev, not our rules). No TPM `uaccess` rule.
 

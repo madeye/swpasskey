@@ -3,8 +3,8 @@
 <!--
   launchd LaunchAgent for swpasskeyd.app (macOS).
 
-    cp packaging/macos/io.github.swpasskey.daemon.plist ~/Library/LaunchAgents/
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.swpasskey.daemon.plist
+    cp packaging/macos/com.tangzixiang.swpasskey.daemon.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tangzixiang.swpasskey.daemon.plist
 
   Only useful once swpasskeyd.app is signed with a profile that carries
   com.apple.developer.hid.virtual.device (DESIGN.md K26 / R1). Presence is an
@@ -15,7 +15,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>io.github.swpasskey.daemon</string>
+  <string>com.tangzixiang.swpasskey.daemon</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Applications/swpasskeyd.app/Contents/MacOS/swpasskeyd</string>
