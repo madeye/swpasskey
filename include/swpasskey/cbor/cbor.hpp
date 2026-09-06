@@ -19,6 +19,8 @@ public:
   void write_tstr(std::string_view v);
   void write_bool(bool v);
   void write_array_header(std::size_t n);
+  // Append already-encoded CBOR bytes (e.g. a nested map built elsewhere).
+  void write_raw(std::span<const std::uint8_t> encoded);
   void write_map(std::vector<std::pair<std::vector<std::uint8_t>, std::vector<std::uint8_t>>> entries);
   std::vector<std::uint8_t> finish();
 
@@ -44,6 +46,11 @@ public:
   Result<bool> boolean();
   Result<std::size_t> map();
   Result<std::size_t> array();
+  // Skip one complete data item (any type, nested). For unknown map keys.
+  Result<void> skip();
+  // Peek the major type of the next item (0..7) without consuming it.
+  Result<std::uint8_t> peek_major() const;
+  std::size_t offset() const { return off_; }
   bool done() const { return off_ >= in_.size(); }
 
 private:

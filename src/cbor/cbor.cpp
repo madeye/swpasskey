@@ -65,6 +65,10 @@ void Writer::write_bool(bool v) {
 
 void Writer::write_array_header(std::size_t n) { append_type(4, n); }
 
+void Writer::write_raw(std::span<const std::uint8_t> encoded) {
+  buf_.insert(buf_.end(), encoded.begin(), encoded.end());
+}
+
 void Writer::write_map(
     std::vector<std::pair<std::vector<std::uint8_t>, std::vector<std::uint8_t>>> entries) {
   std::sort(entries.begin(), entries.end(),
@@ -234,6 +238,60 @@ Result<std::size_t> Reader::map() {
     return std::unexpected(Status::CborUnexpectedType);
   }
   return static_cast<std::size_t>(h->second);
+}
+
+Result<std::uint8_t> Reader::peek_major() const {
+  if (off_ >= in_.size()) {
+    return std::unexpected(Status::InvalidCbor);
+  }
+  return static_cast<std::uint8_t>(in_[off_] >> 5);
+}
+
+Result<void> Reader::skip() {
+  auto h = take_head();
+  if (!h) {
+    return std::unexpected(h.error());
+  }
+  switch (h->first) {
+    case 0:
+    case 1:
+      return {};
+    case 2:
+    case 3: {
+      auto b = take_bytes(h->second);
+      if (!b) {
+        return std::unexpected(b.error());
+      }
+      return {};
+    }
+    case 4: {
+      for (std::uint64_t i = 0; i < h->second; ++i) {
+        if (auto r = skip(); !r) {
+          return r;
+        }
+      }
+      return {};
+    }
+    case 5: {
+      for (std::uint64_t i = 0; i < h->second; ++i) {
+        if (auto r = skip(); !r) {
+          return r;
+        }
+        if (auto r = skip(); !r) {
+          return r;
+        }
+      }
+      return {};
+    }
+    case 6:
+      return skip();  // tag: skip the tagged item
+    case 7:
+      // Simple values / floats: the head already consumed the argument bytes
+      // for ai 24..27 (bool/null are ai 20/21/22 with no extra).
+      return {};
+    default:
+      return std::unexpected(Status::InvalidCbor);
+  }
 }
 
 Result<std::size_t> Reader::array() {

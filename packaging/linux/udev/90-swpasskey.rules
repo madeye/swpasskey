@@ -1,0 +1,11 @@
+# swpasskey: virtual FIDO HID authenticator (UHID). Install to
+# /etc/udev/rules.d/ then `udevadm control --reload-rules && udevadm trigger`.
+#
+# Only UHID + our hidraw node are touched. TPM nodes (/dev/tpmrm*) are owned
+# by the distro's TPM udev rules (GROUP=tss); we deliberately do NOT retag them.
+
+# Allow the active seat to create the virtual HID device.
+KERNEL=="uhid", SUBSYSTEM=="misc", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+# Our virtual FIDO device (VID/PID); systemd fido_id also tags by usage page 0xF1D0.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="f1d0", TAG+="uaccess", GROUP="plugdev", MODE="0660"

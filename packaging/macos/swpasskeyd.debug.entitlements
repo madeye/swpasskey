@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Development profile: same as release plus get-task-allow for lldb. -->
+  <key>com.apple.developer.hid.virtual.device</key>
+  <true/>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>$(AppIdentifierPrefix)io.github.swpasskey</string>
+  </array>
+  <key>com.apple.security.get-task-allow</key>
+  <true/>
+</dict>
+</plist>

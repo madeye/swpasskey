@@ -38,6 +38,10 @@ public:
       const Message& msg) const;
   void cancel(std::uint32_t cid);
   std::optional<HidErr> on_timeout();
+  // CID of a partially assembled message, if any (for the 500 ms timer).
+  std::optional<std::uint32_t> assembling_cid() const {
+    return assembly_ ? std::optional<std::uint32_t>{assembly_->cid} : std::nullopt;
+  }
 
 private:
   struct Assembly {

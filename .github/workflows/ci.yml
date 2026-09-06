@@ -12,7 +12,7 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build g++ cmake
+          sudo apt-get install -y ninja-build g++ cmake libssl-dev fido2-tools libfido2-dev
       - name: Configure
         run: cmake --preset ci
       - name: Build

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Release / notarization: no get-task-allow. Both keys are restricted and
+       require a paid-team provisioning profile that grants them. Ad-hoc
+       `codesign --sign -` with these keys is expected to AMFI-kill. -->
+  <key>com.apple.developer.hid.virtual.device</key>
+  <true/>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>$(AppIdentifierPrefix)io.github.swpasskey</string>
+  </array>
+</dict>
+</plist>

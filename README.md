@@ -22,7 +22,10 @@ Credential private keys use a hardware engine when one is available (Linux TPM
 
 ## Status
 
-**PR1 and PR2 are implemented** on feature branches (`feature/pr1-cmake-skeleton` → `feature/pr2-hid-cbor-crypto`). The daemon still does not enumerate a HID device. Next is PR3: UHID / `IOHIDUserDevice` + `authenticatorGetInfo` so `fido2-token -L` can see it on Linux.
+**PR1–PR3 are implemented** on stacked feature branches. `swpasskeyd` creates the
+virtual HID device (Linux UHID; macOS `IOHIDUserDevice` when the entitlement is
+present), runs the two-thread CTAPHID loop with keepalives, and answers
+`authenticatorGetInfo` (`FIDO_2_0`). Next is PR4: `makeCredential` / `getAssertion`.
 
 See [`STATUS.md`](STATUS.md) for the PR board, deviations, and what does not work yet.
 
@@ -44,6 +47,32 @@ cmake --preset debug -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
 ```
 
 Presets: `debug`, `release`, `asan`, `ci`.
+
+## Run (Linux)
+
+```bash
+sudo modprobe uhid
+sudo cp packaging/linux/udev/90-swpasskey.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+sudo usermod -aG plugdev $USER   # re-login
+./build/debug/swpasskeyd --key-backend=software
+# other terminal
+fido2-token -L                   # vendor=0x1209 product=0xf1d0
+fido2-token -I /dev/hidrawN
+```
+
+User presence is a `y/N` prompt on the daemon's terminal until desktop
+notifications land (PR8). `--testing` (or `SWPASSKEY_TESTING=1`) auto-approves
+and is only available in Debug builds.
+
+## Run (macOS)
+
+`IOHIDUserDevice` requires the restricted entitlement
+`com.apple.developer.hid.virtual.device`, which only a paid-team provisioning
+profile can grant. Build the bundle with `packaging/macos/make_app.sh` and a
+real signing identity; ad-hoc `codesign --sign -` is not supported. Without the
+profile the daemon logs `iohid_create_failed` and exits (K26: Linux is the v1
+gate).
 
 ## Threat model (short)
 
