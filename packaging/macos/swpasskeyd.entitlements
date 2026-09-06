@@ -5,7 +5,8 @@
 <dict>
   <!-- Release / notarization: no get-task-allow. Both keys are restricted and
        require a paid-team provisioning profile that grants them. Ad-hoc
-       `codesign --sign -` with these keys is expected to AMFI-kill. -->
+       signing with these keys is expected to AMFI-kill. XML comments must not
+       contain a double hyphen: AMFI's plist parser rejects the file. -->
   <key>com.apple.developer.hid.virtual.device</key>
   <true/>
   <key>keychain-access-groups</key>

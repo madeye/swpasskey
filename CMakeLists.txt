@@ -25,6 +25,12 @@ if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_QUIET)
 endif()
+# The macOS bundle runs under the hardened runtime, which refuses to load a
+# Homebrew dylib signed by a different Team ID; link libcrypto statically there.
+option(SWPASSKEY_STATIC_OPENSSL "Link OpenSSL statically" ${APPLE})
+if(SWPASSKEY_STATIC_OPENSSL)
+  set(OPENSSL_USE_STATIC_LIBS TRUE)
+endif()
 find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
 find_package(Threads REQUIRED)
 

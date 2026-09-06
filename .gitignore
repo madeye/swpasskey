@@ -11,3 +11,6 @@ CMakeUserPresets.json
 .clangd/
 /out/
 /.claude/
+packaging/macos/embedded.provisionprofile
+__pycache__/
+*.pyc

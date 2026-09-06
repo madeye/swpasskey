@@ -26,6 +26,15 @@
       }
     },
     {
+      "name": "app",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build/app",
+      "cacheVariables": {
+        "SWPASSKEY_TPM": "OFF",
+        "SWPASSKEY_STATIC_OPENSSL": "ON"
+      }
+    },
+    {
       "name": "asan",
       "inherits": "debug",
       "binaryDir": "${sourceDir}/build/asan",
@@ -46,6 +55,7 @@
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "app", "configurePreset": "app" },
     { "name": "asan", "configurePreset": "asan" },
     { "name": "ci", "configurePreset": "ci" }
   ],
@@ -58,6 +68,11 @@
     {
       "name": "ci",
       "configurePreset": "ci",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "app",
+      "configurePreset": "app",
       "output": { "outputOnFailure": true }
     },
     {

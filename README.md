@@ -105,13 +105,24 @@ and is only available in Debug builds.
 ## Run (macOS)
 
 `IOHIDUserDevice` requires the restricted entitlement
-`com.apple.developer.hid.virtual.device`, and Secure Enclave key persistence
-requires `keychain-access-groups`; only a paid-team provisioning profile can
-grant them. Build the bundle with `packaging/macos/make_app.sh` and a real
-signing identity; ad-hoc `codesign --sign -` is not supported. Without the
-profile the daemon logs `iohid_create_failed` and exits, and `--key-backend=auto`
-falls back to software keys (K26: Linux is the v1 gate). A LaunchAgent plist
-is in `packaging/macos/`. Presence is an NSAlert (`SWPASSKEY_PRESENCE=alert`).
+`com.apple.developer.hid.virtual.device`, which Apple grants per team on
+request; Secure Enclave key persistence requires `keychain-access-groups`,
+which any Developer ID provisioning profile grants. Build and sign the bundle:
+
+```sh
+cmake --preset app && cmake --build --preset app        # static OpenSSL, no TPM
+cp <profile>.provisionprofile packaging/macos/embedded.provisionprofile
+packaging/macos/make_app.sh build/app "Developer ID Application: <team>" release
+cp -R build/app/swpasskeyd.app /Applications/
+```
+
+`make_app.sh` embeds the profile, expands the team prefix, and strips any
+restricted entitlement the profile does not grant (AMFI SIGKILLs a process at
+exec otherwise). Ad-hoc `codesign --sign -` is not supported. Without the HID
+entitlement the daemon logs `iohid_create_failed` and exits, so load the
+LaunchAgent in `packaging/macos/` only once Apple has granted it; with the
+socket transport the signed bundle already runs `--key-backend=auto` on the
+Secure Enclave. Presence is an NSAlert (`SWPASSKEY_PRESENCE=alert`).
 
 ## Threat model (short)
 
