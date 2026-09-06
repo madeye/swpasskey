@@ -22,12 +22,13 @@ Credential private keys use a hardware engine when one is available (Linux TPM
 
 ## Status
 
-PR1 is the build skeleton. The daemon prints version/`--help` and exits. HID,
-CTAP, and key backends land in later PRs.
+**PR1 and PR2 are implemented** on feature branches (`feature/pr1-cmake-skeleton` → `feature/pr2-hid-cbor-crypto`). The daemon still does not enumerate a HID device. Next is PR3: UHID / `IOHIDUserDevice` + `authenticatorGetInfo` so `fido2-token -L` can see it on Linux.
+
+See [`STATUS.md`](STATUS.md) for the PR board, deviations, and what does not work yet.
 
 ## Build
 
-Requires CMake ≥ 3.28, Ninja, a C++23 compiler (`std::expected`).
+Requires CMake ≥ 3.28, Ninja, a C++23 compiler (`std::expected`), OpenSSL 3.
 
 ```bash
 cmake --preset debug
@@ -36,7 +37,7 @@ ctest --preset debug --output-on-failure
 ./build/debug/swpasskeyd --help
 ```
 
-macOS OpenSSL (later PRs):
+On macOS, CMake runs `brew --prefix openssl@3` when `OPENSSL_ROOT_DIR` is unset. Override if your OpenSSL 3 lives elsewhere:
 
 ```bash
 cmake --preset debug -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"

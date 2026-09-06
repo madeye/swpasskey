@@ -5,7 +5,7 @@
 | **Title** | swpasskey — software passkey that enumerates as a USB HID FIDO authenticator |
 | **Author** | swpasskey design (rev 3, review-driven) |
 | **Date** | 2026-09-06 |
-| **Status** | Draft (rev 4 — leftover consistency: K25 Overview, PR numbers, macOS gate, excludeList Deny, 0x40, tpmrm0, install_id/dek, OQ8) |
+| **Status** | Accepted (rev 4). Implementation in progress: PR1–PR2 landed on feature branches; PR3 is next. Tracker: `STATUS.md`. |
 | **Audience** | Senior engineers implementing v1 |
 | **Language** | C++23 |
 | **v1 platforms** | Linux, macOS (Windows explicitly out) |
@@ -2059,21 +2059,23 @@ Chrome HID path (for citation): Chromium `device/fido/hid/` enumerates HID devic
 
 Each PR is independently reviewable and mergeable to `main`. Later PRs must not require rewriting earlier public types. First green light: `fido2-token -L` sees the device. Hardware backends land **after** the store can persist handles; CTAP is written against `KeyBackend` from the start so PR6 does not rewrite make/get.
 
-### PR1 — Build skeleton
+Live board (done / next / pending, branches, deviations): **[`STATUS.md`](STATUS.md)**.
+
+### PR1 — Build skeleton **(landed `feature/pr1-cmake-skeleton` `3154504`)**
 
 - **Title:** `build: CMake 3.28 skeleton, presets, warnings, Catch2 smoke test`
 - **Files:** `CMakeLists.txt`, `CMakePresets.json`, `cmake/CompilerFlags.cmake`, `cmake/FetchCatch2.cmake`, `include/swpasskey/status.hpp`, `src/log/log.cpp`, `src/daemon/main.cpp` (prints version, exits 0 with `--help`), `tests/smoke_test.cpp`, `.github/workflows/ci.yml`, `.clang-tidy`, `README.md` (threat model + how to build)
 - **Depends on:** none
 - **Description:** C++23 project that configures on Linux and macOS, `-Wall -Wextra -Werror`, `std::expected` smoke, structured logger writing one JSON line. No HID yet. Establishes namespace `swpk`, AAGUID constant, VID/PID constants.
 
-### PR2 — HID framing + CBOR + OpenSSL + Software KeyBackend
+### PR2 — HID framing + CBOR + OpenSSL + Software KeyBackend **(landed `feature/pr2-hid-cbor-crypto` `e1fe6c1`)**
 
 - **Title:** `feat: CTAPHID framer, canonical CBOR, OpenSSL 3 provider, SoftwareKeyBackend`
-- **Files:** `src/ctap/hid_framer.cpp`, `src/ctap/hid_defs.hpp`, `src/cbor/*`, `src/crypto/openssl_provider.cpp`, `src/crypto/key_backend.hpp`, `src/crypto/software_key_backend.cpp`, `src/crypto/probe.cpp` (software-only), `include/swpasskey/hid/report_descriptor.hpp`, tests `hid_framer_test.cpp`, `cbor_test.cpp`, `crypto_test.cpp`, `key_backend_software_test.cpp`, `cmake/FetchTinycbor.cmake`
+- **Files:** `src/ctap/hid_framer.cpp`, `include/swpasskey/ctap/hid_defs.hpp`, `src/cbor/*`, `src/crypto/openssl_provider.cpp`, `include/swpasskey/crypto/key_backend.hpp`, `src/crypto/software_key_backend.cpp` (includes software-only `probe_key_backend`), `include/swpasskey/hid/report_descriptor.hpp`, tests `hid_framer_test.cpp`, `cbor_test.cpp`, `crypto_test.cpp`, `key_backend_software_test.cpp`
 - **Depends on:** PR1
-- **Description:** Byte-accurate INIT/CONT/SEQ/BUSY/ERROR. tinycbor wrapper with canonical encode tests. OpenSSL SHA-256, AES-GCM, HKDF, HMAC, `RAND_bytes`, PIN-ephemeral P-256. `KeyBackend` + `SoftwareKeyBackend` with `sign_der` / `wrap_secret` (identity) / empty `persist_handle`. **No `scalar()` on the public signing API.** All tests run without `/dev/uhid`. Linux configures without tpm2-tss.
+- **Description:** Byte-accurate INIT/CONT/SEQ/BUSY/ERROR. **In-tree** CTAP2 canonical CBOR (not tinycbor — see `STATUS.md`). OpenSSL SHA-256, AES-GCM, HKDF, HMAC, `RAND_bytes`, PIN-ephemeral P-256. `KeyBackend` + `SoftwareKeyBackend` with `sign_der` / `wrap_secret` (identity) / empty `persist_handle`. **No `scalar()` on the public signing API.** Software reload uses `EC_KEY` + `EVP_PKEY_assign_EC_KEY`. All tests run without `/dev/uhid`. Linux configures without tpm2-tss.
 
-### PR3 — Virtual HID device + getInfo (the "it enumerates" PR)
+### PR3 — Virtual HID device + getInfo (the "it enumerates" PR) **(next)**
 
 - **Title:** `feat: UHID and IOHIDUserDevice transports; authenticatorGetInfo; HID I/O thread`
 - **Files:** `src/hid/uhid_transport.cpp`, `src/hid/iokit_transport.mm`, `src/ctap/get_info.cpp`, `src/ctap/authenticator.cpp` (dispatch 0x04 only), `src/daemon/loop.cpp` (HID thread + worker + keepalive state machine), `src/daemon/serial.cpp` (sidecar), `src/daemon/instance_lock.cpp`, `packaging/linux/udev/90-swpasskey.rules` (UHID+hidraw only), `packaging/macos/swpasskeyd.app/` (minimal bundle), `packaging/macos/swpasskeyd.entitlements` + `swpasskeyd.debug.entitlements`, `tests/get_info_test.cpp`, `tests/get_info_golden_test.cpp`, `tests/keepalive_loop_test.cpp`, optional `tests/itest/libfido2_itest.cpp` (getInfo only)
