@@ -1,0 +1,45 @@
+# systemd --user unit for swpasskeyd.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/linux/systemd/swpasskeyd.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now swpasskeyd
+#
+# Prerequisites: `sudo modprobe uhid` (or /etc/modules-load.d), the udev rules
+# from packaging/linux/udev, membership in `plugdev` (and `tss` for the TPM,
+# via the distro's own TPM udev rules). User presence comes from libnotify
+# (Approve / Deny actions) — the unit only makes sense inside a graphical
+# session with a notification daemon that supports actions; otherwise run
+# swpasskeyd in a terminal and answer the y/N prompt.
+[Unit]
+Description=swpasskey software FIDO2 authenticator (virtual USB HID)
+Documentation=https://github.com/madeye/swpasskey
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/swpasskeyd --key-backend=auto
+Restart=on-failure
+RestartSec=2
+Environment=SWPASSKEY_LOG=info
+# Presence: notify (default), or stdin is useless here.
+Environment=SWPASSKEY_PRESENCE=notify
+# Hardening (the daemon needs /dev/uhid, /dev/tpmrm0, the session bus, the
+# keyring and its own data/runtime dirs).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/swpasskey %t/swpasskey
+DeviceAllow=/dev/uhid rw
+DeviceAllow=/dev/tpmrm0 rw
+DevicePolicy=closed
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=graphical-session.target

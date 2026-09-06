@@ -22,15 +22,28 @@ Credential private keys use a hardware engine when one is available (Linux TPM
 
 ## Status
 
-**PR1–PR5 are implemented** on stacked feature branches. `swpasskeyd` creates the
-virtual HID device (Linux UHID; macOS `IOHIDUserDevice` when the entitlement is
-present), runs the two-thread CTAPHID loop with keepalives, and implements
-`getInfo`, discoverable ES256 `makeCredential` / `getAssertion` /
-`getNextAssertion` with packed self-attestation, `reset`, and an AES-256-GCM
-credential store whose DEK lives in the OS keychain. Next: TPM 2.0 and Secure
-Enclave key backends.
+**v1 code complete (PR1–PR13)** on stacked feature branches; see
+[`STATUS.md`](STATUS.md) for the board, verification gaps and accepted
+deviations from the design. What `swpasskeyd` does today:
 
-See [`STATUS.md`](STATUS.md) for the PR board, deviations, and what does not work yet.
+- enumerates as a FIDO HID device (Linux UHID; macOS `IOHIDUserDevice` once the
+  `.app` is signed with the HID entitlement) and runs the two-thread CTAPHID
+  loop with keepalives and cancel;
+- CTAP 2.1 subset: `getInfo`, discoverable ES256 `makeCredential` /
+  `getAssertion` / `getNextAssertion` with packed self-attestation,
+  `clientPIN` protocol 2, `hmac-secret` (dual credRandom), `reset`; CTAP1/U2F
+  over `CTAPHID_MSG`;
+- credential keys in the TPM 2.0 (Linux) or Secure Enclave (macOS, signed
+  `.app` only) with OpenSSL P-256 as the fallback;
+- AES-256-GCM credential store whose DEK lives in libsecret / the macOS
+  Keychain (0600 file fallback);
+- user presence via libnotify (Linux), an NSAlert (macOS) or a `y/N` prompt on
+  the daemon's terminal;
+- `swpasskeyctl list | delete | reset | set-pin | stats` over a 0600 Unix socket.
+
+The Linux gate (`fido2-token -L` and Chrome against a real `/dev/uhid`) has
+not been executed yet; everything above is covered by 102 unit tests, a swtpm
+integration test and a python-fido2 end-to-end run over a socket transport.
 
 ## Build
 
@@ -49,7 +62,10 @@ On macOS, CMake runs `brew --prefix openssl@3` when `OPENSSL_ROOT_DIR` is unset.
 cmake --preset debug -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
 ```
 
-Presets: `debug`, `release`, `asan`, `ci`.
+Presets: `debug`, `release`, `asan`, `ci`. Optional dependencies are detected
+with pkg-config and never required: `tss2-esys`/`tss2-tctildr`/`tss2-mu`/
+`tss2-rc` (TPM backend, `SWPASSKEY_TPM`), `libsecret-1` (DEK storage),
+`libnotify` (presence). `SWPASSKEY_ENABLE_U2F=OFF` disables CTAP1.
 
 ## Run (Linux)
 
@@ -58,27 +74,43 @@ sudo modprobe uhid
 sudo cp packaging/linux/udev/90-swpasskey.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 sudo usermod -aG plugdev $USER   # re-login
-./build/debug/swpasskeyd --key-backend=software
+./build/debug/swpasskeyd --key-backend=auto     # tpm2 if /dev/tpmrm0 works, else software
 # other terminal
 fido2-token -L                   # vendor=0x1209 product=0xf1d0
-fido2-token -I /dev/hidrawN
+fido2-token -I /dev/hidrawN      # FIDO_2_1 FIDO_2_0 U2F_V2, aaguid 6fb1dfdd-...
+./build/debug/swpasskeyctl stats # key_backend=tpm2|software
 ```
 
-User presence is a `y/N` prompt on the daemon's terminal until desktop
-notifications land (PR8). The credential store is
+User presence: libnotify Approve/Deny when a notification daemon with actions
+is running, otherwise a `y/N` prompt on the daemon's terminal
+(`SWPASSKEY_PRESENCE=stdin|notify|auto`). `--testing` / `SWPASSKEY_TESTING=1`
+auto-approves and exists only in Debug builds. The store is
 `$XDG_DATA_HOME/swpasskey/credentials.bin` (macOS: `~/Library/Application
 Support/swpasskey/`); its key is kept in libsecret / the macOS Keychain, or in
-`credentials.bin.dek` (0600) with `--dek-file` or when no keychain is available. `--testing` (or `SWPASSKEY_TESTING=1`) auto-approves
+`credentials.bin.dek` (0600) with `--dek-file` or when no keychain is available.
+For the TPM add yourself to `tss` (distro udev rules; we ship none for the TPM).
+A `systemd --user` unit is in `packaging/linux/systemd/`.
+
+## Try it without a HID device
+
+```bash
+SWPASSKEY_HID_SOCKET=/tmp/swpk.sock ./build/debug/swpasskeyd --testing --dek-file \
+    --key-backend=software --store /tmp/swpk/credentials.bin &
+python3 -m venv .venv && .venv/bin/pip install fido2
+.venv/bin/python tests/e2e/pyfido2_e2e.py /tmp/swpk.sock   # full CTAP2/PIN/hmac/U2F run
+``` `--testing` (or `SWPASSKEY_TESTING=1`) auto-approves
 and is only available in Debug builds.
 
 ## Run (macOS)
 
 `IOHIDUserDevice` requires the restricted entitlement
-`com.apple.developer.hid.virtual.device`, which only a paid-team provisioning
-profile can grant. Build the bundle with `packaging/macos/make_app.sh` and a
-real signing identity; ad-hoc `codesign --sign -` is not supported. Without the
-profile the daemon logs `iohid_create_failed` and exits (K26: Linux is the v1
-gate).
+`com.apple.developer.hid.virtual.device`, and Secure Enclave key persistence
+requires `keychain-access-groups`; only a paid-team provisioning profile can
+grant them. Build the bundle with `packaging/macos/make_app.sh` and a real
+signing identity; ad-hoc `codesign --sign -` is not supported. Without the
+profile the daemon logs `iohid_create_failed` and exits, and `--key-backend=auto`
+falls back to software keys (K26: Linux is the v1 gate). A LaunchAgent plist
+is in `packaging/macos/`. Presence is an NSAlert (`SWPASSKEY_PRESENCE=alert`).
 
 ## Threat model (short)
 

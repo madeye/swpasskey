@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd LaunchAgent for swpasskeyd.app (macOS).
+
+    cp packaging/macos/io.github.swpasskey.daemon.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.swpasskey.daemon.plist
+
+  Only useful once swpasskeyd.app is signed with a profile that carries
+  com.apple.developer.hid.virtual.device (DESIGN.md K26 / R1). Presence is an
+  NSAlert on the main thread, so the agent must run in the Aqua session
+  (LimitLoadToSessionType). Edit ProgramArguments if the bundle lives
+  elsewhere than /Applications.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.github.swpasskey.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Applications/swpasskeyd.app/Contents/MacOS/swpasskeyd</string>
+    <string>--key-backend=auto</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SWPASSKEY_LOG</key>
+    <string>info</string>
+    <key>SWPASSKEY_PRESENCE</key>
+    <string>alert</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/swpasskeyd.log</string>
+</dict>
+</plist>

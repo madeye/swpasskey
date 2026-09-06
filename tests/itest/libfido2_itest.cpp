@@ -14,6 +14,7 @@
 #include <string>
 #include <thread>
 
+#if defined(__linux__)
 namespace {
 
 std::string run(const std::string& cmd) {
@@ -29,6 +30,7 @@ std::string run(const std::string& cmd) {
 bool have(const char* tool) { return std::system((std::string("command -v ") + tool + " >/dev/null 2>&1").c_str()) == 0; }
 
 }  // namespace
+#endif
 
 TEST_CASE("fido2-token sees swpasskeyd over UHID", "[itest]") {
 #if !defined(__linux__)

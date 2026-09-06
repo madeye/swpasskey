@@ -175,7 +175,7 @@ target_link_libraries(swpasskey_ctl PUBLIC swpasskey_daemon swpasskey_log)
 
 # --- executables ------------------------------------------------------------
 add_executable(swpasskeyd src/daemon/main.cpp)
-target_link_libraries(swpasskeyd PRIVATE swpasskey_daemon swpasskey_ctl swpasskey_warnings)
+target_link_libraries(swpasskeyd PRIVATE swpasskey_ctl swpasskey_warnings)
 add_executable(swpasskeyctl src/ctl/main.cpp)
 target_link_libraries(swpasskeyctl PRIVATE swpasskey_ctl swpasskey_warnings)
 target_compile_definitions(swpasskeyd PRIVATE
@@ -211,7 +211,6 @@ if(SWPASSKEY_TPM)
 endif()
 target_link_libraries(swpasskey_tests PRIVATE
   Catch2::Catch2WithMain
-  swpasskey_daemon
   swpasskey_ctl
   swpasskey_warnings)
 include(Catch)
@@ -223,4 +222,14 @@ if(SWPASSKEY_ITEST)
   target_compile_definitions(swpasskey_itest PRIVATE
     SWPASSKEY_BIN_DIR="${CMAKE_BINARY_DIR}")
   add_test(NAME swpasskey_itest COMMAND swpasskey_itest)
+endif()
+
+# --- install ------------------------------------------------------------------
+include(GNUInstallDirs)
+install(TARGETS swpasskeyd swpasskeyctl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(UNIX AND NOT APPLE)
+  install(FILES packaging/linux/udev/90-swpasskey.rules
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/udev/rules.d)
+  install(FILES packaging/linux/systemd/swpasskeyd.service
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/user)
 endif()

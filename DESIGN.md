@@ -5,7 +5,7 @@
 | **Title** | swpasskey — software passkey that enumerates as a USB HID FIDO authenticator |
 | **Author** | swpasskey design (rev 3, review-driven) |
 | **Date** | 2026-09-06 |
-| **Status** | Accepted (rev 4). Implementation in progress: PR1–PR2 landed on feature branches; PR3 is next. Tracker: `STATUS.md`. |
+| **Status** | Accepted (rev 4). Implementation: PR1–PR13 landed on stacked feature branches; the Linux hardware gate is still to be run. Tracker and accepted deviations: `STATUS.md`. |
 | **Audience** | Senior engineers implementing v1 |
 | **Language** | C++23 |
 | **v1 platforms** | Linux, macOS (Windows explicitly out) |
