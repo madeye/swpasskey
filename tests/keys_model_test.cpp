@@ -75,8 +75,8 @@ TEST_CASE("keys model: formatting helpers", "[ui][keys]") {
   REQUIRE(s[10] == ' ');
   REQUIRE(s[13] == ':');
   REQUIRE(hex_string(std::array<std::uint8_t, 3>{0x00, 0xab, 0xff}) == "00abff");
-  REQUIRE(keys_summary(0, "Secure Enclave") == "0 keys \xC2\xB7 Secure Enclave");
-  REQUIRE(keys_summary(1, "") == "1 key");
-  REQUIRE(keys_summary(2, "Software") == "2 keys \xC2\xB7 Software");
+  REQUIRE(keys_summary(0, "Secure Enclave") == "No passkeys \xC2\xB7 Secure Enclave");
+  REQUIRE(keys_summary(1, "") == "1 passkey");
+  REQUIRE(keys_summary(2, "Software") == "2 passkeys \xC2\xB7 Software");
   REQUIRE(std::string(backend_label(crypto::BackendKind::SecureEnclave)) == "Secure Enclave");
 }

@@ -220,10 +220,14 @@ gboolean NotifyPresence::close_cb(gpointer data) {
 
 Decision NotifyPresence::confirm(const PresenceRequest& req, ctap::CancelToken& cancel,
                                  std::chrono::milliseconds timeout) {
-  std::string body = std::string("Approve ") + detail::kind_action(req.kind) + " for \"" +
-                     detail::clamp_text(req.rp_id) + "\"?";
+  const std::string rp = detail::clamp_text(req.rp_id);
+  std::string body = std::string("Approve ") + detail::kind_action(req.kind);
+  if (!rp.empty()) {
+    body += " for \"" + rp + "\"";
+  }
+  body += "?";
   if (!req.user_display.empty()) {
-    body += "\nUser: " + detail::clamp_text(req.user_display);
+    body += "\nAccount: " + detail::clamp_text(req.user_display);
   }
   if (markup_) {
     char* escaped = g_markup_escape_text(body.c_str(), -1);

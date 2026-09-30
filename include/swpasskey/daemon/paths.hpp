@@ -15,6 +15,12 @@ std::filesystem::path default_data_dir();
 std::filesystem::path default_runtime_dir();
 std::filesystem::path default_store_path();
 
+// macOS: when stderr is /dev/null (launched from Finder or by launchd), point
+// it at ~/Library/Logs/swpasskey/swpasskeyd.log (dir 0700, file 0600,
+// O_NOFOLLOW) so logs stay per-user. A tty, pipe or file is left alone.
+// No-op elsewhere.
+void redirect_detached_stderr();
+
 // Creates `dir` (0700) if missing.
 Result<void> ensure_dir(const std::filesystem::path& dir);
 

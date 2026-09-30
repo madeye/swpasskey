@@ -12,7 +12,9 @@
   both. Presence is an
   NSAlert on the main thread, so the agent must run in the Aqua session
   (LimitLoadToSessionType). Edit ProgramArguments if the bundle lives
-  elsewhere than /Applications.
+  elsewhere than /Applications. No StandardErrorPath: the daemon writes its
+  log to ~/Library/Logs/swpasskey/swpasskeyd.log itself (a fixed /tmp path
+  is shared by every local user).
 -->
 <plist version="1.0">
 <dict>
@@ -41,7 +43,5 @@
   <string>Aqua</string>
   <key>ProcessType</key>
   <string>Interactive</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/swpasskeyd.log</string>
 </dict>
 </plist>

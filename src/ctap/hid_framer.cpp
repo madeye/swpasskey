@@ -43,12 +43,14 @@ std::expected<std::optional<Message>, HidErr> HidFramer::ingest(
   if ((b4 & kTypeInit) != 0) {
     const std::uint8_t cmd = static_cast<std::uint8_t>(b4 & 0x7F);
     const std::uint16_t bcnt = read_u16_be(report.subspan(5, 2));
+    // Ownership first: another channel's INIT must never drop the transaction
+    // in progress, whatever its BCNT.
+    if (assembly_ && assembly_->cid != cid) {
+      return std::unexpected(HidErr::ChannelBusy);
+    }
     if (bcnt > kMaxMessage) {
       assembly_.reset();
       return std::unexpected(HidErr::InvalidLen);
-    }
-    if (assembly_ && assembly_->cid != cid) {
-      return std::unexpected(HidErr::ChannelBusy);
     }
     Assembly a;
     a.cid = cid;

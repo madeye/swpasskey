@@ -9,11 +9,11 @@
 
 namespace swpk::ui::detail {
 
-// Verbose form for the tty prompt, e.g. "register (makeCredential)".
+// Sentence start for the tty prompt, e.g. "Create a passkey" / "Sign in".
 const char* kind_name(PresenceRequest::Kind k);
 
-// Short form for a notification title, e.g. "register" / "sign in" /
-// "factory reset" / "set PIN".
+// Gerund for the notification body, e.g. "creating a passkey" /
+// "signing in" / "erasing all passkeys".
 const char* kind_action(PresenceRequest::Kind k);
 
 // `rp_id` / `user_display` come from the client and are attacker-controlled.

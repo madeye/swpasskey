@@ -69,7 +69,7 @@ std::vector<KeyRow> key_rows(const store::CredentialStore& store) {
 }
 
 std::string keys_summary(std::size_t count, const std::string& key_backend) {
-  std::string s = std::to_string(count) + (count == 1 ? " key" : " keys");
+  std::string s = count == 0 ? "No passkeys" : std::to_string(count) + (count == 1 ? " passkey" : " passkeys");
   if (!key_backend.empty()) {
     s += " \xC2\xB7 " + key_backend;  // middle dot
   }

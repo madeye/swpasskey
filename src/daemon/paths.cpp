@@ -49,6 +49,28 @@ std::filesystem::path default_runtime_dir() {
 
 std::filesystem::path default_store_path() { return default_data_dir() / "credentials.bin"; }
 
+void redirect_detached_stderr() {
+#if defined(__APPLE__)
+  struct stat st{};
+  if (::fstat(STDERR_FILENO, &st) != 0 || !S_ISCHR(st.st_mode) || ::isatty(STDERR_FILENO) != 0) {
+    return;
+  }
+  const auto dir = home_dir() / "Library" / "Logs" / "swpasskey";
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  if (ec || ::chmod(dir.c_str(), 0700) != 0) {
+    return;
+  }
+  const auto file = dir / "swpasskeyd.log";
+  const int fd = ::open(file.c_str(), O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+  if (fd < 0) {
+    return;
+  }
+  ::dup2(fd, STDERR_FILENO);
+  ::close(fd);
+#endif
+}
+
 Result<void> ensure_dir(const std::filesystem::path& dir) {
   std::error_code ec;
   if (std::filesystem::is_directory(dir, ec)) {

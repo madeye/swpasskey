@@ -77,6 +77,7 @@ struct Options {
 }  // namespace
 
 int main(int argc, char** argv) {
+  swpk::daemon::redirect_detached_stderr();
   swpk::log::set_level_from_env();
   Options opt;
   if (const char* t = std::getenv("SWPASSKEY_TESTING"); t != nullptr && std::strcmp(t, "1") == 0) {

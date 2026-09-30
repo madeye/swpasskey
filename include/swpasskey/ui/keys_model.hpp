@@ -38,7 +38,7 @@ std::string format_unix_time(std::uint64_t unix_seconds);
 // All credentials, sorted by rp_id, then user_name, then creation time.
 std::vector<KeyRow> key_rows(const store::CredentialStore& store);
 
-// One-line summary for the status menu, e.g. "3 keys · Secure Enclave".
+// One-line summary for the status menu, e.g. "3 passkeys · Secure Enclave".
 std::string keys_summary(std::size_t count, const std::string& key_backend);
 
 }  // namespace swpk::ui

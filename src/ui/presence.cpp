@@ -16,15 +16,15 @@ namespace detail {
 const char* kind_name(PresenceRequest::Kind k) {
   switch (k) {
     case PresenceRequest::Kind::MakeCredential:
-      return "register (makeCredential)";
+      return "Create a passkey";
     case PresenceRequest::Kind::GetAssertion:
-      return "sign in (getAssertion)";
+      return "Sign in";
     case PresenceRequest::Kind::Reset:
-      return "FACTORY RESET";
+      return "Erase all passkeys";
     case PresenceRequest::Kind::SetPin:
-      return "set PIN";
+      return "Set a PIN";
     case PresenceRequest::Kind::Selection:
-      return "select this authenticator";
+      return "Use this security key";
   }
   return "?";
 }
@@ -32,15 +32,15 @@ const char* kind_name(PresenceRequest::Kind k) {
 const char* kind_action(PresenceRequest::Kind k) {
   switch (k) {
     case PresenceRequest::Kind::MakeCredential:
-      return "register";
+      return "creating a passkey";
     case PresenceRequest::Kind::GetAssertion:
-      return "sign in";
+      return "signing in";
     case PresenceRequest::Kind::Reset:
-      return "factory reset";
+      return "erasing all passkeys";
     case PresenceRequest::Kind::SetPin:
-      return "set PIN";
+      return "setting a PIN";
     case PresenceRequest::Kind::Selection:
-      return "select";
+      return "using this security key";
   }
   return "?";
 }
@@ -87,19 +87,26 @@ Decision StdinPresence::confirm(const PresenceRequest& req, ctap::CancelToken& c
     }
     return Decision::Timeout;
   }
-  std::fprintf(stderr, "\n[swpasskey] %s for rp=\"%s\"%s%s — approve? [y/N] ",
-               kind_name(req.kind), req.rp_id.c_str(),
-               req.user_display.empty() ? "" : " user=", req.user_display.c_str());
+  // Client-controlled text: strip control characters so escape sequences
+  // cannot rewrite the prompt line.
+  const std::string rp = detail::clamp_text(req.rp_id);
+  const std::string user = detail::clamp_text(req.user_display);
+  if (rp.empty()) {
+    std::fprintf(stderr, "\n[swpasskey] %s? [y/N] ", kind_name(req.kind));
+  } else {
+    std::fprintf(stderr, "\n[swpasskey] %s on \"%s\"%s%s? [y/N] ",
+                 kind_name(req.kind), rp.c_str(), user.empty() ? "" : " as ", user.c_str());
+  }
   std::fflush(stderr);
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   for (;;) {
     if (cancel.is_cancelled()) {
-      std::fputs("\n[swpasskey] cancelled by client\n", stderr);
+      std::fputs("\n[swpasskey] The request was canceled.\n", stderr);
       return Decision::Cancelled;
     }
     const auto now = std::chrono::steady_clock::now();
     if (now >= deadline) {
-      std::fputs("\n[swpasskey] timed out\n", stderr);
+      std::fputs("\n[swpasskey] The request timed out.\n", stderr);
       return Decision::Timeout;
     }
     pollfd pfd{STDIN_FILENO, POLLIN, 0};

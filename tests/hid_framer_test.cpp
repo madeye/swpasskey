@@ -94,6 +94,23 @@ TEST_CASE("interleaved CID is ChannelBusy", "[hid]") {
   REQUIRE(r.error() == HidErr::ChannelBusy);
 }
 
+TEST_CASE("oversized INIT from another CID does not drop the assembly", "[hid]") {
+  HidFramer f;
+  std::vector<std::uint8_t> payload(80, 0x05);
+  auto a = f.frame(Message{1, swpk::ctap::kCmdPing, payload});
+  REQUIRE(f.ingest(a[0]).has_value());
+  auto evil = init_pkt(0x11111111, swpk::ctap::kCmdCbor, {});
+  evil[5] = 0xFF;
+  evil[6] = 0xFF;
+  auto r = f.ingest(evil);
+  REQUIRE_FALSE(r.has_value());
+  REQUIRE(r.error() == HidErr::ChannelBusy);
+  auto done = f.ingest(a[1]);
+  REQUIRE(done.has_value());
+  REQUIRE(done->has_value());
+  REQUIRE((*done)->payload == payload);
+}
+
 TEST_CASE("cancel mid-CONT", "[hid]") {
   HidFramer f;
   std::vector<std::uint8_t> payload(80, 0x03);

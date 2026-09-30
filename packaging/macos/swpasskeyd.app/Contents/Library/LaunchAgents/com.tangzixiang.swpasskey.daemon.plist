@@ -5,6 +5,7 @@
   "Launch at login" is enabled in Preferences (menu bar item). BundleProgram
   is relative to the bundle, so the bundle may live anywhere. Presence is an
   NSAlert on the main thread, so the agent is limited to the Aqua session.
+  Logs go to ~/Library/Logs/swpasskey/swpasskeyd.log (the daemon opens it).
 -->
 <plist version="1.0">
 <dict>
@@ -30,7 +31,5 @@
   <string>Aqua</string>
   <key>ProcessType</key>
   <string>Interactive</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/swpasskeyd.log</string>
 </dict>
 </plist>

@@ -144,6 +144,28 @@ TEST_CASE("hmac-secret: create output, deterministic outputs, two salts", "[hmac
   REQUIRE(c.outputs(*rig.call(get_assert_request(g))).size() == 32);
 }
 
+TEST_CASE("hmac-secret: no output without user presence (up=false)", "[hmac]") {
+  Rig rig;
+  auto id = make_with_hmac(rig);
+  HmacClient c(rig);
+  std::vector<std::uint8_t> s1(32, 0x55);
+  GetAssertOpts g;
+  g.allow = std::vector<std::vector<std::uint8_t>>{id};
+  g.up = false;
+  g.hmac_secret_ext = c.ext(s1);
+  auto r = rig.call(get_assert_request(g));
+  REQUIRE(r.has_value());
+  auto ad = parse_auth_data(as_bstr(split_int_map(*r)[2]));
+  REQUIRE((ad.flags & 0x01) == 0);  // UP
+  REQUIRE((ad.flags & 0x80) == 0);  // ED: no extension output at all
+  // Discoverable (no allowList) pre-flight is refused the same way.
+  g.allow.reset();
+  g.hmac_secret_ext = c.ext(s1);
+  r = rig.call(get_assert_request(g));
+  REQUIRE(r.has_value());
+  REQUIRE((parse_auth_data(as_bstr(split_int_map(*r)[2])).flags & 0x80) == 0);
+}
+
 TEST_CASE("hmac-secret: UV selects the other credRandom", "[hmac]") {
   Rig rig;
   auto id = make_with_hmac(rig);

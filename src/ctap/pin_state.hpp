@@ -57,7 +57,9 @@ public:
              std::chrono::milliseconds token_idle_timeout = kTokenIdleTimeout);
   ~PinManager();
 
-  // authenticatorClientPIN (0x06). `up` performs user presence for setPIN.
+  // authenticatorClientPIN (0x06). setPIN over CTAP does not ask for user
+  // presence (CTAP 2.1 does not require it, and it only works while no PIN
+  // is set); the control-socket path (Authenticator::ctl_set_pin) does.
   Result<std::vector<std::uint8_t>> handle(std::span<const std::uint8_t> body, CancelToken& cancel);
 
   // make/get: verify pinUvAuthParam (protocol 2, full 32-byte HMAC), the

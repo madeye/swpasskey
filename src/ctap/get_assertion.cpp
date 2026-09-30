@@ -106,7 +106,9 @@ Result<std::vector<std::uint8_t>> Authenticator::build_assertion(
   }
   const std::uint32_t count = bump_counter ? cred.sign_count + 1 : cred.sign_count;
   std::vector<std::uint8_t> ext_out;
-  if (ext != nullptr && ext->hmac_secret_present) {
+  // hmac-secret output is a secret (disk/vault unlock keys): only release it
+  // after user presence, never on an up=false pre-flight.
+  if (ext != nullptr && ext->hmac_secret_present && (flags & detail::kFlagUp) != 0) {
     auto hs = hmac_secret_output(cred, *ext, (flags & detail::kFlagUv) != 0);
     if (!hs) {
       return std::unexpected(hs.error());
