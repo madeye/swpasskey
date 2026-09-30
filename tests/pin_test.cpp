@@ -333,3 +333,22 @@ TEST_CASE("PIN token idle timeout and zero-length pinUvAuthParam", "[pin]") {
   m2.pin_protocol = 2;
   REQUIRE(rig.call(make_cred_request(m2)).error() == Status::PinAuthInvalid);
 }
+
+TEST_CASE("authenticatorSelection (0x0B) is a UP-only command with an empty response", "[selection]") {
+  Rig rig;
+  const std::vector<std::uint8_t> req{ctap::kCmdAuthenticatorSelection};
+  rig.presence.next = ui::Decision::Allow;
+  auto ok = rig.call(req);
+  REQUIRE(ok.has_value());
+  REQUIRE(ok->empty());
+  REQUIRE(rig.presence.seen.back().kind == ui::PresenceRequest::Kind::Selection);
+  rig.presence.next = ui::Decision::Deny;
+  REQUIRE(rig.call(req).error() == Status::OperationDenied);
+  rig.presence.next = ui::Decision::Timeout;
+  REQUIRE(rig.call(req).error() == Status::UserActionTimeout);
+  // A pending getNextAssertion list is dropped like for any other command.
+  rig.presence.next = ui::Decision::Allow;
+  rig.tok.reset();
+  rig.tok.cancel();
+  REQUIRE(rig.auth->handle_cbor(req, rig.tok).error() == Status::KeepaliveCancel);
+}

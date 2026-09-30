@@ -14,7 +14,7 @@ namespace swpk::ui {
 enum class Decision { Allow, Deny, Timeout, Cancelled };
 
 struct PresenceRequest {
-  enum class Kind { MakeCredential, GetAssertion, Reset, SetPin };
+  enum class Kind { MakeCredential, GetAssertion, Reset, SetPin, Selection };
   Kind kind{Kind::GetAssertion};
   std::string rp_id;
   std::string user_display;  // may be empty

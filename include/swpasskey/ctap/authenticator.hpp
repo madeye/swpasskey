@@ -29,6 +29,9 @@ inline constexpr std::uint8_t kCmdGetInfo = 0x04;
 inline constexpr std::uint8_t kCmdClientPin = 0x06;
 inline constexpr std::uint8_t kCmdReset = 0x07;
 inline constexpr std::uint8_t kCmdGetNextAssertion = 0x08;
+// CTAP 2.1 authenticatorSelection: Chrome sends it to every FIDO_2_1 key when
+// more than one is plugged in ("touch the key you want to use").
+inline constexpr std::uint8_t kCmdAuthenticatorSelection = 0x0B;
 
 struct AuthenticatorConfig {
   std::array<std::uint8_t, 16> aaguid{kAaguid};
@@ -94,6 +97,7 @@ private:
                                                       CancelToken& cancel);
   Result<std::vector<std::uint8_t>> cmd_get_next_assertion();
   Result<std::vector<std::uint8_t>> cmd_reset(CancelToken& cancel);
+  Result<std::vector<std::uint8_t>> cmd_authenticator_selection(CancelToken& cancel);
   Result<std::vector<std::uint8_t>> cmd_client_pin(std::span<const std::uint8_t> body,
                                                    CancelToken& cancel);
 

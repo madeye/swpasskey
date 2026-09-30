@@ -2178,7 +2178,7 @@ v1 "done" = PR1–PR7 + PR9 + PR12. PR6/PR7 are **required as code** (software f
 | 0x07 | authenticatorReset | PR5 (software); PR6/PR7 add `destroy` |
 | 0x08 | authenticatorGetNextAssertion | PR4 |
 | 0x0A | authenticatorCredentialManagement | **not v1** |
-| 0x0B | authenticatorSelection | not v1 |
+| 0x0B | authenticatorSelection | v1 (added 2026-09-21: Chrome sends it to every FIDO_2_1 key when several are plugged in; UP only, empty response) |
 | 0x0C | authenticatorLargeBlobs | not v1 |
 | 0x0D | authenticatorConfig | not v1 |
 | 0x41 | prototype credMgmt | not v1 |

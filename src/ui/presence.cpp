@@ -23,6 +23,8 @@ const char* kind_name(PresenceRequest::Kind k) {
       return "FACTORY RESET";
     case PresenceRequest::Kind::SetPin:
       return "set PIN";
+    case PresenceRequest::Kind::Selection:
+      return "select this authenticator";
   }
   return "?";
 }
@@ -37,6 +39,8 @@ const char* kind_action(PresenceRequest::Kind k) {
       return "factory reset";
     case PresenceRequest::Kind::SetPin:
       return "set PIN";
+    case PresenceRequest::Kind::Selection:
+      return "select";
   }
   return "?";
 }

@@ -5,6 +5,7 @@
 #include "swpasskey/log/log.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <string>
 
 namespace swpk::ctap {
@@ -24,6 +25,8 @@ const char* cmd_name(std::uint8_t cmd) {
       return "reset";
     case kCmdGetNextAssertion:
       return "getNextAssertion";
+    case kCmdAuthenticatorSelection:
+      return "authenticatorSelection";
     default:
       return "unknown";
   }
@@ -229,6 +232,25 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_reset(CancelToken& cancel) 
   return std::vector<std::uint8_t>{};
 }
 
+// authenticatorSelection (0x0B): user presence only, empty response. Chrome
+// uses it to let the user pick one of several plugged-in keys; answering
+// INVALID_COMMAND makes Chrome drop this authenticator for the request.
+Result<std::vector<std::uint8_t>> Authenticator::cmd_authenticator_selection(
+    CancelToken& cancel) {
+  static const std::array<std::uint8_t, 32> kZero{};
+  const auto d = confirm_up(ui::PresenceRequest::Kind::Selection, "", "", kZero, cancel);
+  if (d == ui::Decision::Cancelled) {
+    return std::unexpected(Status::KeepaliveCancel);
+  }
+  if (d == ui::Decision::Timeout) {
+    return std::unexpected(Status::UserActionTimeout);
+  }
+  if (d != ui::Decision::Allow) {
+    return std::unexpected(Status::OperationDenied);
+  }
+  return std::vector<std::uint8_t>{};
+}
+
 Result<void> Authenticator::ctl_reset(CancelToken& cancel) {
   std::lock_guard<std::mutex> lk(op_mu_);
   auto r = cmd_reset(cancel);
@@ -297,6 +319,9 @@ Result<std::vector<std::uint8_t>> Authenticator::handle_cbor(
     case kCmdClientPin:
       r = cmd_client_pin(body, cancel);
       break;
+    case kCmdAuthenticatorSelection:
+      r = cmd_authenticator_selection(cancel);
+      break;
     default:
       r = std::unexpected(Status::InvalidCommand);
       break;
@@ -305,7 +330,10 @@ Result<std::vector<std::uint8_t>> Authenticator::handle_cbor(
   count_status(status);
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - t0);
+  char cmd_hex[5];
+  std::snprintf(cmd_hex, sizeof cmd_hex, "0x%02x", static_cast<unsigned>(cmd));
   log::info("ctap", {{"cmd", cmd_name(cmd)},
+                     {"cmd_byte", cmd_hex},
                      {"status", std::to_string(status)},
                      {"ms", std::to_string(ms.count())}});
   return r;

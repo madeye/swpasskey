@@ -12,9 +12,10 @@ swpasskey is a C++23 daemon that enumerates as a **USB HID FIDO** authenticator
 (usage page `0xF1D0`) on Linux (UHID) and macOS (`IOHIDUserDevice`). Unmodified
 Chrome, `libfido2`, and `ssh-sk` speak CTAP2 to it.
 
-v1 platforms: **Linux and macOS**. Windows is out. Linux Chrome + `libfido2` is
-the hard release gate; macOS HID needs a signed `.app` and a restricted
-entitlement and is best-effort.
+v1 platforms: **Linux and macOS**. Windows is out. Chrome + `libfido2` on a
+real OS HID device is the release gate; macOS needs a signed `.app` whose
+provisioning profile carries the `com.apple.developer.hid.virtual.device`
+entitlement (granted by Apple per team on request).
 
 Credential private keys use a hardware engine when one is available (Linux TPM
 2.0, macOS Secure Enclave) with OpenSSL 3 P-256 as the fallback. See
@@ -26,13 +27,13 @@ Credential private keys use a hardware engine when one is available (Linux TPM
 [`STATUS.md`](STATUS.md) for the board, verification gaps and accepted
 deviations from the design. What `swpasskeyd` does today:
 
-- enumerates as a FIDO HID device (Linux UHID; macOS `IOHIDUserDevice` once the
-  `.app` is signed with the HID entitlement) and runs the two-thread CTAPHID
-  loop with keepalives and cancel;
+- enumerates as a FIDO HID device (Linux UHID; macOS `IOHIDUserDevice` from
+  the signed `.app`) and runs the two-thread CTAPHID loop with keepalives and
+  cancel;
 - CTAP 2.1 subset: `getInfo`, discoverable ES256 `makeCredential` /
   `getAssertion` / `getNextAssertion` with packed self-attestation,
-  `clientPIN` protocol 2, `hmac-secret` (dual credRandom), `reset`; CTAP1/U2F
-  over `CTAPHID_MSG`;
+  `clientPIN` protocol 2, `hmac-secret` (dual credRandom), `reset`,
+  `authenticatorSelection`; CTAP1/U2F over `CTAPHID_MSG`;
 - credential keys in the TPM 2.0 (Linux) or Secure Enclave (macOS, signed
   `.app` only) with OpenSSL P-256 as the fallback;
 - AES-256-GCM credential store whose DEK lives in libsecret / the macOS
@@ -41,10 +42,12 @@ deviations from the design. What `swpasskeyd` does today:
   the daemon's terminal;
 - `swpasskeyctl list | delete | reset | set-pin | stats` over a 0600 Unix socket.
 
-Verified on Linux against a real `/dev/uhid` device with libfido2
-(`fido2-token`, `fido2-cred`, `fido2-assert`) and the python-fido2 suite;
-Chrome has not been exercised yet. 110 unit tests, a swtpm integration test
-and the python-fido2 end-to-end run back the rest.
+Verified on macOS (signed `.app`, Secure Enclave keys) with Chrome 153
+WebAuthn register + sign-in, libfido2 and the python-fido2 suite against the
+real `IOHIDUserDevice`, and on Linux against a real `/dev/uhid` device with
+libfido2 (`fido2-token`, `fido2-cred`, `fido2-assert`) and the python-fido2
+suite. Chrome on Linux has not been exercised yet. 105 unit tests, a swtpm
+integration test and the python-fido2 end-to-end run back the rest.
 
 ## Build
 
@@ -105,9 +108,12 @@ and is only available in Debug builds.
 ## Run (macOS)
 
 `IOHIDUserDevice` requires the restricted entitlement
-`com.apple.developer.hid.virtual.device`, which Apple grants per team on
-request; Secure Enclave key persistence requires `keychain-access-groups`,
-which any Developer ID provisioning profile grants. Build and sign the bundle:
+`com.apple.developer.hid.virtual.device`. Apple grants it per team on request;
+once granted it appears under the App ID's "Additional Capabilities" in the
+developer portal and must be ticked there before a regenerated Developer ID
+profile carries it (the App Store Connect API cannot enable it). Secure Enclave
+key persistence requires `keychain-access-groups`, which any Developer ID
+profile grants. Build and sign the bundle:
 
 ```sh
 cmake --preset app && cmake --build --preset app        # static OpenSSL, no TPM
@@ -119,10 +125,17 @@ cp -R build/app/swpasskeyd.app /Applications/
 `make_app.sh` embeds the profile, expands the team prefix, and strips any
 restricted entitlement the profile does not grant (AMFI SIGKILLs a process at
 exec otherwise). Ad-hoc `codesign --sign -` is not supported. Without the HID
-entitlement the daemon logs `iohid_create_failed` and exits, so load the
-LaunchAgent in `packaging/macos/` only once Apple has granted it; with the
-socket transport the signed bundle already runs `--key-backend=auto` on the
-Secure Enclave. Presence is an NSAlert (`SWPASSKEY_PRESENCE=alert`).
+entitlement the daemon logs `iohid_create_failed` and exits; with it, it logs
+`iohid_created` and `hidutil list` shows the device (vendor `0x1209`, product
+`0xf1d0`). `--key-backend=auto` selects the Secure Enclave. Presence is an
+NSAlert (`SWPASSKEY_PRESENCE=alert`); the LaunchAgent in `packaging/macos/`
+runs it that way.
+
+Note for `libfido2` users: `fido2-token -L` does not list the device because
+libfido2's macOS backend only enumerates HID devices whose IOKit `Transport` is
+`USB`, and the system reports user-space HID devices as `Virtual`. Open it by
+registry entry instead: `fido2-token -I ioreg://$(printf %d <RegistryID>)`,
+with the id from `hidutil list`. python-fido2 and Chrome enumerate it directly.
 
 ## Threat model (short)
 

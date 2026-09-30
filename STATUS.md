@@ -1,6 +1,6 @@
 # swpasskey — implementation status
 
-Last updated: 2026-09-06.
+Last updated: 2026-09-21.
 
 Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as a protocol reference.
 
@@ -8,12 +8,12 @@ Living tracker. The spec is [`DESIGN.md`](DESIGN.md). Do not treat this file as 
 
 | | |
 | --- | --- |
-| **Phase** | **v1 code complete: PR1–PR13 implemented; Linux libfido2 gate executed on real UHID.** macOS signed `.app` built and installed; SE + Keychain verified in it; macOS HID blocked on Apple granting `com.apple.developer.hid.virtual.device`. Remaining: Chrome desktop run, real TPM, the HID entitlement request (see "Verification gaps"). |
-| **Current branch** | `feature/pr13-packaging`, top of the stack below |
-| **`main`** | Still unborn — no commits. Never commit to `main`. Merge the stack in order. |
+| **Phase** | **v1 code complete: PR1–PR13 implemented; the hard gate (Chrome + libfido2 on a real OS HID device) passed on macOS** (2026-09-21, signed `.app` with the Apple-granted HID entitlement, Secure Enclave keys); Linux libfido2 half passed on real UHID. Remaining: Chrome on Linux, real TPM (see "Verification gaps"). |
+| **Current branch** | `feature/macos-hid-entitlement` (authenticatorSelection, macOS gate results) on top of `main` |
+| **`main`** | v1 merged (public repo `madeye/swpasskey`). Never commit to `main`; squash/rebase merges only. |
 | **Tests** | 109/109 Catch2 (`debug`, `asan`, `ci` presets; incl. TPM golden + swtpm itest) + python-fido2 end-to-end over the socket transport (getInfo, make/get/getNext, PIN protocol 2, hmac-secret, U2F, reset) on the software and TPM backends |
-| **Hard v1 gate** | **libfido2 half passed** on a real `/dev/uhid` (Ubuntu 25.10 / kernel 6.17 Lima VM): `fido2-token -L/-I`, `fido2-cred -M/-V` (self-attestation), `fido2-assert -G/-V` (allowList, discoverable, hmac-secret), `fido2-token -S/-R`, plus the full python-fido2 suite over hidraw (56 checks). **Chrome not run** (headless VM, no desktop session) |
-| **HID device** | Linux UHID; macOS `IOHIDUserDevice` (needs the signed `.app`); dev-only Unix-socket transport for tests |
+| **Hard v1 gate** | **macOS: passed.** Signed `.app` → real `IOHIDUserDevice`, keys in the Secure Enclave. libfido2 1.17 (`fido2-token -I/-S/-R`, `fido2-cred -M/-V` with hmac-secret, `fido2-assert -G/-V` allowList / discoverable / hmac-secret), the full python-fido2 suite over the OS HID device, and **Chrome 153 WebAuthn** register (`transports=["usb"]`, packed attestation) + sign-in (UP flag, counter, userHandle) on a localhost RP, run both on the host (macOS 27) and in a clean macOS 26.6 Tart VM. **Linux: libfido2 half passed** on real `/dev/uhid` (Ubuntu 25.10 Lima VM); Chrome on Linux not run. `fido2-token -L` lists the device on Linux only (see gaps) |
+| **HID device** | Linux UHID; macOS `IOHIDUserDevice` (signed `.app` with the granted HID entitlement); dev-only Unix-socket transport for tests |
 
 ## Branch stack
 
@@ -71,13 +71,16 @@ v1 done = PR1–PR7 + PR9 + PR12 — all present. Linux Chrome + `libfido2` on r
 ## Verification gaps (honest)
 
 - **Linux gate, libfido2 half: done** in a Lima VM (Ubuntu 25.10, kernel 6.17, GCC 15, tpm2-tss/libsecret/libnotify all detected). `cmake --preset ci` builds clean, all 110 tests pass including the swtpm itest and `tests/itest/libfido2_itest.cpp` against real UHID; `fido2-token -L` lists `vendor=0x1209, product=0xf1d0`; `-I` prints `FIDO_2_1, FIDO_2_0, U2F_V2`, `hmac-secret`, the AAGUID, `rk`, `pin protocols: 2`; `fido2-cred -M -r -h` + `fido2-cred -V -h` (self-attestation) succeed; `fido2-assert -G/-V` succeed with allowList, discoverable (`-r`) and hmac-secret; `fido2-token -S` sets a PIN, `-R` resets; `python3 tests/e2e/pyfido2_e2e.py hid` prints ALL OK over hidraw. systemd's `fido_id` tags the device (`ID_FIDO_TOKEN=1`, `uaccess`). Found and fixed on the way: the design's udev rule (`ATTRS{idVendor}`) never matches a UHID device — it now matches `KERNELS=="0003:1209:F1D0.*"` — and GCC 15 `-Wformat-truncation` in the stats code.
-- **Chrome on Linux: not run.** The VM is headless; the Chrome half of the gate needs a desktop session (chrome://device-log, register + sign in at a WebAuthn demo site). Everything Chrome does over CTAPHID has been exercised by python-fido2's client over the same hidraw node.
+- **Chrome on Linux: not run** (Chrome has been exercised on macOS instead, see below). The Linux VM is headless; the Chrome half of the gate needs a desktop session (chrome://device-log, register + sign in at a WebAuthn demo site). Everything Chrome does over CTAPHID has been exercised by python-fido2's client over the same hidraw node.
 - **TPM verified against swtpm only** (tpm2-tss 4.1.3 built locally on macOS, and Ubuntu's packages in the VM), not a real `/dev/tpmrm0`; the Lima VM has no vTPM.
-- **macOS signed `.app` spike: done (2026-09-07), HID half blocked by Apple.** `cmake --preset app` (static OpenSSL, no TPM) + `packaging/macos/make_app.sh` with the team's Developer ID identity and a Developer ID profile for `com.tangzixiang.swpasskey.daemon` produce a bundle that depends only on system libraries and passes `codesign --verify --strict`. Results on macOS 26 (Apple silicon):
+- **macOS HID half: done (2026-09-21).** Apple granted `com.apple.developer.hid.virtual.device` to team 32B45SMMQL; after ticking it under the App ID's "Additional Capabilities" in the developer portal, a freshly generated Developer ID profile carries the key (the public App Store Connect API cannot enable it, it has no capability type for it). `make_app.sh` keeps the entitlement, AMFI accepts the bundle, and the daemon logs `iohid_created` with `transport=IOHIDUserDevice`, `key_backend=se`. `hidutil list` shows vendor `0x1209` / product `0xf1d0`, usage page `0xF1D0`. Against that device: `fido2-token -I`, `fido2-cred -M -r -h` + `-V -h`, `fido2-assert -G/-V` (allowList, `-r`, hmac-secret), `fido2-token -S`, `-R`, and `python3 tests/e2e/pyfido2_e2e.py hid` (ALL OK, Secure Enclave rows). Caveat: **`fido2-token -L` does not list it** — libfido2's macOS backend only enumerates devices whose IOKit `Transport` property is `USB` (`is_fido()` in `hid_osx.c`, unless built with `FIDO_HID_ANY`), and IOHIDUserDevice forces `Transport=Virtual` even though the daemon passes `kIOHIDTransportKey=USB`; opening by registry path (`fido2-token -I ioreg://<entry-id>`, id from `hidutil list`) works. Chrome uses its own HID enumeration and does not filter on transport.
+  - **Chrome half: passed (2026-09-21)** in a clean macOS 26.6.2 Tart VM (`ghcr.io/cirruslabs/macos-tahoe-base`, Chrome 153.0.8010.53, libfido2 1.17.0; the VM even exposes a Secure Enclave, `key_backend=se`). A localhost page (`navigator.credentials.create` with `authenticatorAttachment: cross-platform`, `residentKey: required`, `attestation: direct`; then `get` with the returned id) driven through the DevTools protocol: **register OK** (`transports=["usb"]`, 277-byte attestation object) and **assert OK** (flags `0x01`, counter 2, userHandle `user-1`). The daemon saw exactly Chrome's expected sequence: `getInfo`, `clientPIN` (key agreement + PIN token), `makeCredential`, then `getInfo`, `getAssertion`. Two Chrome behaviours worth knowing: (1) for a discoverable credential Chrome **insists on a client PIN** when the key advertises `clientPin` — with no PIN set it shows "Set up a new PIN for your security key" before touching the key, so the run set one with `fido2-token -S` first and typed it into Chrome's sheet via System Events; (2) Chrome probes `0x40` (bioEnrollment preview) after PIN setup and takes the `INVALID_COMMAND` answer in stride.
+  - Found while running Chrome on the host with a YubiKey also plugged in: Chrome sends `authenticatorSelection` (0x0B) to every key that advertises `FIDO_2_1` so the user can touch the one to use; swpasskey answered `CTAP1_ERR_INVALID_COMMAND` and Chrome dropped it. 0x0B is now implemented (UP only, empty response; `tests/pin_test.cpp`), a deviation from DESIGN.md Appendix A ("not v1").
+  - Earlier spike (2026-09-07), still true: `cmake --preset app` (static OpenSSL, no TPM) + `packaging/macos/make_app.sh` with the team's Developer ID identity produce a bundle that depends only on system libraries and passes `codesign --verify --strict`.
   - `com.apple.developer.hid.virtual.device` in the signature **without** a profile that grants it → SIGKILL at exec (AMFI), exactly as K26 predicted. A Developer ID profile from the portal grants `keychain-access-groups` (`TEAM.*`) and `com.apple.application-identifier` only; the HID key is not in the portal's capability list and must be requested from Apple. Until then `make_app.sh` strips it and the daemon exits with `iohid_create_failed` on a real launch.
   - **Secure Enclave works in the signed bundle:** with the HID key stripped and `SWPASSKEY_HID_SOCKET` set, `--key-backend=auto` selects `se`, `tests/e2e/pyfido2_e2e.py` prints ALL OK, and a makeCredential/getAssertion round-trip leaves a row with `backend=se` in `swpasskeyctl list`. The **macOS Keychain DEK** path was exercised too (service `com.tangzixiang.swpasskey`, account `dek`, no `--dek-file`).
   - Hardened runtime refuses Homebrew's `libcrypto.3.dylib` (different Team ID); hence `SWPASSKEY_STATIC_OPENSSL` (default ON on macOS) and the `app` preset. The entitlement plists also had `--` inside XML comments, which AMFI's plist parser rejects.
-  - Installed at `/Applications/swpasskeyd.app` (with `swpasskeyctl` in `Contents/MacOS`); the LaunchAgent is **not** loaded because the daemon cannot create the HID device yet. Not notarized (local install only).
+  - Installed at `/Applications/swpasskeyd.app` (with `swpasskeyctl` in `Contents/MacOS`), rebuilt 2026-09-21 with the HID entitlement. The LaunchAgent is still **not** loaded (NSAlert presence untested). Not notarized (local install only; `spctl` says "Unnotarized Developer ID").
 - **libsecret / libnotify** now compile for real in the VM (`SWPASSKEY_LIBSECRET=ON`, `SWPASSKEY_LIBNOTIFY=ON`) but were not exercised at runtime: the VM has no session keyring or notification daemon, so the gate runs used `--dek-file` and `--testing`.
 - **NSAlert presence** was never displayed (unattended session; the signed-bundle runs used `SWPASSKEY_PRESENCE=stdin` under a pty); compiled and reviewed only.
 - CI workflow (`.github/workflows/ci.yml`) has not run on GitHub yet (`main` has no remote history). It installs tss2/libsecret/swtpm/fido2 on Ubuntu, runs the swtpm itest, and builds a no-TPM variant.
@@ -103,6 +106,7 @@ v1 done = PR1–PR7 + PR9 + PR12 — all present. Linux Chrome + `libfido2` on r
 | `NotifyPresence` / UN notifications on macOS | libnotify on Linux; **NSAlert** on macOS (design allows it); `Presence` gained `needs_main_thread()` / `run_main_loop()` | UN actionable categories need the signed bundle |
 | `probe_key_backend(pref)` | `probe_key_backend(ProbeOptions, detail)` with a TPM-params hook; store opens before the probe | The TPM primary needs the install seed generated by the store |
 | U2F status for invalid P1 unspecified | `0x6A86` (INCORRECT_P1P2); store full → `0x6F00` | ISO 7816-4 |
+| `authenticatorSelection` (0x0B) "not v1" (Appendix A) | Implemented: UP prompt, empty response; deny → `OPERATION_DENIED`, timeout → `USER_ACTION_TIMEOUT` | Chrome sends it to every `FIDO_2_1` key when more than one is plugged in and drops keys that reject it |
 | `rk=false` → `UnsupportedOption` (0x2B) | Kept as designed (Open Question 8) | A post-implementation review noted CTAP 2.1 would rather create the discoverable credential anyway; Chrome and python-fido2 omit the key, so no known client is affected |
 
 ## Post-implementation review fixes (on top of PR13)
@@ -130,7 +134,9 @@ SWPASSKEY_HID_SOCKET=/tmp/swpk.sock ./build/debug/swpasskeyd --testing --dek-fil
 .venv/bin/python tests/e2e/pyfido2_e2e.py /tmp/swpk.sock      # prints ALL OK
 ./build/debug/swpasskeyctl --socket /tmp/swpk-ctl.sock stats
 
-# Linux gate (not yet run — DESIGN.md Appendix C):
-sudo modprobe uhid && ./build/debug/swpasskeyd --key-backend=auto &
-fido2-token -L && fido2-token -I /dev/hidrawN
+# macOS gate as executed (signed .app with the HID entitlement, see README "Run (macOS)"):
+SWPASSKEY_PRESENCE=stdin /Applications/swpasskeyd.app/Contents/MacOS/swpasskeyd --key-backend=auto   # in a terminal; answer y to the prompts
+hidutil list | grep swpasskey                       # RegistryID column, e.g. 0x1002b4026
+fido2-token -I ioreg://$(printf %d 0x1002b4026)     # -L does not list it (libfido2 filters Transport=USB)
+python3 tests/e2e/pyfido2_e2e.py hid                # python-fido2 enumerates it; prints ALL OK
 ```
