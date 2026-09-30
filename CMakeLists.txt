@@ -112,9 +112,9 @@ else()
 endif()
 
 # --- ui ---------------------------------------------------------------------
-set(SWPK_UI_SOURCES src/ui/presence.cpp)
+set(SWPK_UI_SOURCES src/ui/presence.cpp src/ui/keys_model.cpp src/ui/menubar.cpp)
 if(APPLE)
-  list(APPEND SWPK_UI_SOURCES src/ui/presence_macos.mm)
+  list(APPEND SWPK_UI_SOURCES src/ui/presence_macos.mm src/ui/menubar_macos.mm)
 else()
   include(cmake/FindLibnotify.cmake)
   if(SWPASSKEY_LIBNOTIFY)
@@ -122,11 +122,11 @@ else()
   endif()
 endif()
 swpk_lib(swpasskey_ui ${SWPK_UI_SOURCES})
-target_link_libraries(swpasskey_ui PUBLIC swpasskey_log Threads::Threads)
+target_link_libraries(swpasskey_ui PUBLIC swpasskey_log swpasskey_store Threads::Threads)
 if(APPLE)
-  set_source_files_properties(src/ui/presence_macos.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  set_source_files_properties(src/ui/presence_macos.mm src/ui/menubar_macos.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
   target_link_libraries(swpasskey_ui PUBLIC
-    "-framework AppKit" "-framework CoreGraphics" "-framework Foundation")
+    "-framework AppKit" "-framework CoreGraphics" "-framework Foundation" "-framework ServiceManagement")
 elseif(SWPASSKEY_LIBNOTIFY)
   target_compile_definitions(swpasskey_ui PUBLIC SWPASSKEY_LIBNOTIFY=1)
   target_link_libraries(swpasskey_ui PUBLIC PkgConfig::LIBNOTIFY)
@@ -210,6 +210,7 @@ add_executable(swpasskey_tests
   tests/pin_test.cpp
   tests/hmac_secret_test.cpp
   tests/ctl_test.cpp
+  tests/keys_model_test.cpp
   $<$<PLATFORM_ID:Darwin>:tests/keychain_macos_test.mm>
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/tpm_primary_template_test.cpp>
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/itest/tpm_swtpm_itest.cpp>)

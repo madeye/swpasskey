@@ -24,6 +24,8 @@
   <string>12.0</string>
   <key>LSUIElement</key>
   <true/>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.utilities</string>
   <key>NSHumanReadableCopyright</key>

@@ -29,6 +29,12 @@ cp "$BUILD_DIR/swpasskeyd" "$APP/Contents/MacOS/swpasskeyd"
 if [ -x "$BUILD_DIR/swpasskeyctl" ]; then
   cp "$BUILD_DIR/swpasskeyctl" "$APP/Contents/MacOS/swpasskeyctl"
 fi
+# App icon and the SMAppService LaunchAgent ("Launch at login" in Preferences).
+for sub in Resources Library; do
+  if [ -d "$HERE/swpasskeyd.app/Contents/$sub" ]; then
+    cp -R "$HERE/swpasskeyd.app/Contents/$sub" "$APP/Contents/$sub"
+  fi
+done
 
 if otool -L "$APP/Contents/MacOS/swpasskeyd" | grep -E '^\s+/(opt|usr/local|private|Users|Volumes)/' ; then
   echo "warning: non-system dylibs above will be rejected by the hardened runtime; use 'cmake --preset app'" >&2

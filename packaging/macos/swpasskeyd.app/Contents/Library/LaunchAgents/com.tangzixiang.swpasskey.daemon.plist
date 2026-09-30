@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent registered by the app itself through SMAppService when
+  "Launch at login" is enabled in Preferences (menu bar item). BundleProgram
+  is relative to the bundle, so the bundle may live anywhere. Presence is an
+  NSAlert on the main thread, so the agent is limited to the Aqua session.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tangzixiang.swpasskey.daemon</string>
+  <key>BundleProgram</key>
+  <string>Contents/MacOS/swpasskeyd</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SWPASSKEY_LOG</key>
+    <string>info</string>
+    <key>SWPASSKEY_PRESENCE</key>
+    <string>alert</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/swpasskeyd.log</string>
+</dict>
+</plist>

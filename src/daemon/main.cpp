@@ -10,6 +10,8 @@
 #include "swpasskey/store/credential.hpp"
 #include "swpasskey/store/file_store.hpp"
 #include "swpasskey/store/keychain.hpp"
+#include "swpasskey/ui/keys_model.hpp"
+#include "swpasskey/ui/menubar.hpp"
 #include "swpasskey/ui/presence.hpp"
 
 #include <atomic>
@@ -267,6 +269,16 @@ int main(int argc, char** argv) {
     // AppKit owns the main thread (NSAlert). Run the HID loop beside it and
     // let the presence event loop exit as soon as run() returns — including
     // when SIGINT/SIGTERM called loop.stop().
+    swpk::ui::MenuBarDeps mdeps;
+    mdeps.store = store.get();
+    mdeps.delete_key = [&auth](std::span<const std::uint8_t> id) { return auth.ctl_delete(id); };
+    mdeps.quit = [&loop] { loop.stop(); };
+    mdeps.version = SWPASSKEY_VERSION;
+    mdeps.key_backend = swpk::ui::backend_label(primary->kind());
+    mdeps.serial = *serial;
+    mdeps.store_path = opt.store.string();
+    mdeps.ctl_socket = opt.ctl_socket.string();
+    auto menubar = swpk::ui::make_menu_bar(std::move(mdeps));  // main thread; may be null
     std::atomic<bool> loop_done{false};
     std::thread io([&] {
       ok = loop.run();
@@ -274,6 +286,7 @@ int main(int argc, char** argv) {
     });
     presence->run_main_loop([&] { return loop_done.load(std::memory_order_acquire); });
     io.join();
+    menubar.reset();
   } else {
     ok = loop.run();
   }
