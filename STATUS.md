@@ -107,6 +107,8 @@ v1 done = PR1–PR7 + PR9 + PR12 — all present. Linux Chrome + `libfido2` on r
 
 ## Post-implementation review fixes (on top of PR13)
 
+- **macOS Keychain DEK clobbering (fixed 2026-09-30).** The Keychain DEK item used a fixed account (`dek`) with the install_id only in the comment, so opening *any* store with the OS keychain (e.g. a test run with `--store /tmp/...` and no `--dek-file`) replaced the real store's DEK and the next open failed with `keychain_dek_install_id_mismatch` / `dek_missing`. The account is now `dek.<install_id>` (one item per store, like the libsecret schema), a legacy `dek` item is migrated on first open when its comment matches, and `delete_dek` only touches items for its own install_id. `tests/keychain_macos_test.mm` covers two stores side by side and the migration against the real login keychain.
+
 A high-effort code review of the whole stack produced ten findings; nine were fixed in `fix: address code-review findings`: bounded CBOR `skip()` nesting (stack overflow from a hostile map value), PIN retry counter decremented and persisted **before** the compare (fail closed if the flush fails), TPM primary rebuilt after `authenticatorReset` (`KeyBackend::reinit_after_reset`), U2F rows marked `rk=false` and excluded from discoverable enumeration (and never emit an empty `user.id`), makeCredential replaces an existing credential with the same rp.id + user.id, Secure Enclave `destroy_secret` deletes the hmac-secret Keychain item, store `put`/`erase` roll back on flush failure, allowList duplicates de-duplicated, and any non-getNextAssertion command clears the pending assertion list. The tenth (`rk=false`) is the accepted deviation above.
 
 ## Verify

@@ -1309,7 +1309,7 @@ Greenfield. On-disk layout is the data model.
 | Store | `$XDG_DATA_HOME/swpasskey/credentials.bin` | `~/Library/Application Support/swpasskey/credentials.bin` |
 | Serial sidecar (PR3, before store) | `$XDG_DATA_HOME/swpasskey/serial` (0600, 16 hex chars) | `~/Library/Application Support/swpasskey/serial` |
 | Instance lock | `flock` on `credentials.bin` once PR5 exists; until then `flock` `$XDG_RUNTIME_DIR/swpasskey/swpasskeyd.lock` | same, under Application Support / `$TMPDIR` |
-| DEK | libsecret schema `com.tangzixiang.swpasskey.dek` (attr `install_id`); fallback file `credentials.bin.dek` mode 0600 | Keychain service `com.tangzixiang.swpasskey`, account `dek` |
+| DEK | libsecret schema `com.tangzixiang.swpasskey.dek` (attr `install_id`); fallback file `credentials.bin.dek` mode 0600 | Keychain service `com.tangzixiang.swpasskey`, account `dek.<install_id hex>` (one item per store; the pre-fix single `dek` item is migrated on first open) |
 | Logs | stderr; optional `$XDG_STATE_HOME/swpasskey/swpasskeyd.log` | stderr; optional `~/Library/Logs/swpasskey/swpasskeyd.log` |
 | Config | **none in v1** (CLI + env only, K28) | **none in v1** |
 
@@ -1432,7 +1432,7 @@ private:
 
 ### Keychain schema
 
-- macOS DEK: `SecItemAdd` / `SecItemCopyMatching` with `kSecClassGenericPassword`, `kSecAttrService = "com.tangzixiang.swpasskey"`, `kSecAttrAccount = "dek"`, `kSecAttrAccessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, access group `com.tangzixiang.swpasskey`.
+- macOS DEK: `SecItemAdd` / `SecItemCopyMatching` with `kSecClassGenericPassword`, `kSecAttrService = "com.tangzixiang.swpasskey"`, `kSecAttrAccount = "dek.<install_id hex>"` (one item per store — a fixed account let any store opened with the OS keychain overwrite every other store's DEK; a legacy `dek` item whose comment matches the install_id is migrated on first open), `kSecAttrAccessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, access group `com.tangzixiang.swpasskey`.
 - macOS SE keys: `kSecClassKey` + `kSecAttrApplicationTag` as above.
 - Linux: libsecret schema `org.freedesktop.Secret.Generic` with attributes `{ "xdg:schema": "com.tangzixiang.swpasskey.dek", "install_id": "<hex>" }`. If libsecret is absent or the collection is locked, fall back to `credentials.bin.dek` mode 0600 containing the raw 32-byte DEK — **log a warning**. This fallback is weaker for **software** creds and for metadata; TPM-wrapped private keys remain inert without the TPM.
 

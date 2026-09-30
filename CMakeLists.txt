@@ -93,7 +93,7 @@ endif()
 swpk_lib(swpasskey_store ${SWPK_STORE_SOURCES})
 target_link_libraries(swpasskey_store PUBLIC swpasskey_crypto swpasskey_cbor swpasskey_log)
 if(APPLE)
-  set_source_files_properties(src/store/keychain_macos.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  set_source_files_properties(src/store/keychain_macos.mm tests/keychain_macos_test.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
   target_link_libraries(swpasskey_store PUBLIC "-framework Security" "-framework Foundation")
 else()
   find_package(PkgConfig)
@@ -210,6 +210,7 @@ add_executable(swpasskey_tests
   tests/pin_test.cpp
   tests/hmac_secret_test.cpp
   tests/ctl_test.cpp
+  $<$<PLATFORM_ID:Darwin>:tests/keychain_macos_test.mm>
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/tpm_primary_template_test.cpp>
   $<$<BOOL:${SWPASSKEY_TPM}>:tests/itest/tpm_swtpm_itest.cpp>)
 if(SWPASSKEY_TPM)
