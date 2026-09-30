@@ -6,8 +6,10 @@
     cp packaging/macos/com.tangzixiang.swpasskey.daemon.plist ~/Library/LaunchAgents/
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tangzixiang.swpasskey.daemon.plist
 
-  Only useful once swpasskeyd.app is signed with a profile that carries
-  com.apple.developer.hid.virtual.device (DESIGN.md K26 / R1). Presence is an
+  Manual alternative to Preferences > "Launch at login" in the app's menu bar
+  item, which registers the copy of this agent embedded in the bundle
+  (Contents/Library/LaunchAgents, BundleProgram) via SMAppService. Do not use
+  both. Presence is an
   NSAlert on the main thread, so the agent must run in the Aqua session
   (LimitLoadToSessionType). Edit ProgramArguments if the bundle lives
   elsewhere than /Applications.

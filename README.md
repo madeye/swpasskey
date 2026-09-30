@@ -40,7 +40,9 @@ deviations from the design. What `swpasskeyd` does today:
   Keychain (0600 file fallback);
 - user presence via libnotify (Linux), an NSAlert (macOS) or a `y/N` prompt on
   the daemon's terminal;
-- `swpasskeyctl list | delete | reset | set-pin | stats` over a 0600 Unix socket.
+- `swpasskeyctl list | delete | reset | set-pin | stats` over a 0600 Unix socket;
+- on macOS, a menu bar key icon with a **Keys** window (installed credentials,
+  delete) and **Preferences** (launch at login, log level, daemon facts).
 
 Verified on macOS (signed `.app`, Secure Enclave keys) with Chrome 153
 WebAuthn register + sign-in, libfido2 and the python-fido2 suite against the
@@ -136,6 +138,15 @@ libfido2's macOS backend only enumerates HID devices whose IOKit `Transport` is
 `USB`, and the system reports user-space HID devices as `Virtual`. Open it by
 registry entry instead: `fido2-token -I ioreg://$(printf %d <RegistryID>)`,
 with the id from `hidutil list`. python-fido2 and Chrome enumerate it directly.
+
+The bundle shows a key icon in the menu bar: **Keys…** lists the credentials
+in the store (site, user, key storage, created, last used, uses) and can
+delete one; **Preferences…** has "Launch at login" (registers the LaunchAgent
+embedded at `Contents/Library/LaunchAgents/` through `SMAppService`, macOS
+13+), the log level (persisted in the app's defaults) and the daemon's
+version, key storage, serial, store path and control socket. The app icon is
+rendered by `packaging/macos/make_icon.swift`; `make_app.sh` copies
+`Resources/` and `Library/` from the bundle template.
 
 ## Threat model (short)
 

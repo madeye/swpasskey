@@ -399,6 +399,10 @@ NSTextField* label(NSString* text, NSRect frame, bool bold = false) {
 - (void)refreshLoginState {
   if (@available(macOS 13.0, *)) {
     SMAppService* svc = [SMAppService agentServiceWithPlistName:kAgentPlist];
+    const char* bundle_path = [[[NSBundle mainBundle] bundlePath] UTF8String];
+    swpk::log::debug("menubar_login_item_status",
+                     {{"status", std::to_string(static_cast<long>(svc.status))},
+                      {"bundle", bundle_path != nullptr ? bundle_path : "?"}});
     switch (svc.status) {
       case SMAppServiceStatusEnabled:
         loginCheckbox_.state = NSControlStateValueOn;
@@ -411,9 +415,11 @@ NSTextField* label(NSString* text, NSRect frame, bool bold = false) {
         loginNote_.stringValue = @"Waiting for approval in System Settings › General › Login Items.";
         break;
       case SMAppServiceStatusNotFound:
+        // launchd has never seen the agent; registering is still allowed and
+        // reports the real error if the bundle really lacks the plist.
         loginCheckbox_.state = NSControlStateValueOff;
-        loginCheckbox_.enabled = NO;
-        loginNote_.stringValue = @"Not available: the bundle has no Contents/Library/LaunchAgents plist.";
+        loginCheckbox_.enabled = YES;
+        loginNote_.stringValue = @"Starts the daemon in your session at login.";
         break;
       case SMAppServiceStatusNotRegistered:
       default:
