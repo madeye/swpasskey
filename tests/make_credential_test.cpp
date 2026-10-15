@@ -1,4 +1,4 @@
-#include "ctap_test_util.hpp"
+	#include "ctap_test_util.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -70,9 +70,6 @@ TEST_CASE("makeCredential option policy", "[mc]") {
   o.up = false;
   REQUIRE(rig.call(make_cred_request(o)).error() == Status::InvalidOption);
   o = {};
-  o.rk = false;
-  REQUIRE(rig.call(make_cred_request(o)).error() == Status::UnsupportedOption);
-  o = {};
   o.uv = true;
   REQUIRE(rig.call(make_cred_request(o)).error() == Status::InvalidOption);
   o = {};
@@ -101,6 +98,61 @@ TEST_CASE("makeCredential option policy", "[mc]") {
   o.pin_protocol = 2;
   REQUIRE(rig.call(make_cred_request(o)).error() == Status::PinAuthInvalid);
   REQUIRE(rig.presence.calls == 1);  // only the credProtect=1 case reached UP
+}
+
+TEST_CASE("non-discoverable credentials require an allowList",
+          "[mc][ga]") {
+  Rig rig;
+
+  MakeCredOpts o;
+  o.rk = false;
+
+  auto id = rig.register_cred(o);
+  REQUIRE(id.size() == 32);
+
+  auto row = rig.store->find_by_id(id);
+  REQUIRE(row.has_value());
+  REQUIRE_FALSE(row->rk);
+
+  // A non-discoverable credential must not be enumerated.
+  REQUIRE(rig.store->find_by_rp(row->rp_id_hash).empty());
+
+  GetAssertOpts a;
+
+  // Without a credential ID, authentication must fail.
+  REQUIRE(rig.call(get_assert_request(a)).error() ==
+          Status::NoCredentials);
+
+  // With its credential ID, authentication must succeed.
+  a.allow = std::vector<std::vector<std::uint8_t>>{id};
+
+  auto result = rig.call(get_assert_request(a));
+  REQUIRE(result.has_value());
+  auto response = split_int_map(*result);
+  auto descriptor = split_text_map(response.at(1));
+  REQUIRE(as_bstr(descriptor.at("id")) == id);
+}
+
+TEST_CASE("non-discoverable credentials preserve existing keys",
+          "[mc]") {
+  Rig rig;
+
+  // Existing discoverable passkey.
+  auto discoverable = rig.register_cred();
+
+  MakeCredOpts o;
+  o.rk = false;
+
+  // Two non-discoverable credentials for the same user and RP.
+  auto first = rig.register_cred(o);
+  auto second = rig.register_cred(o);
+
+  REQUIRE(first != second);
+  REQUIRE(rig.store->size() == 3);
+
+  REQUIRE(rig.store->find_by_id(discoverable).has_value());
+  REQUIRE(rig.store->find_by_id(first).has_value());
+  REQUIRE(rig.store->find_by_id(second).has_value());
 }
 
 TEST_CASE("makeCredential rk=true and up=true explicitly are accepted", "[mc]") {

@@ -6,6 +6,7 @@
 | **Author** | swpasskey design (rev 3, review-driven) |
 | **Date** | 2026-09-06 |
 | **Status** | Accepted (rev 4). Implementation: PR1–PR13 landed on stacked feature branches; the Linux hardware gate is still to be run. Tracker and accepted deviations: `STATUS.md`. |
+| **Proposed amendment (2026-10-15)** | Add CTAP2 non-discoverable ES256 credentials (`rk=false`) for security-key enrollment, including EU Login. Validated locally on Linux; **not yet accepted or merged upstream**. See K10 and the [non-discoverable credential amendment](#proposed-k10-amendment-non-discoverable-ctap2-credentials). |
 | **Audience** | Senior engineers implementing v1 |
 | **Language** | C++23 |
 | **v1 platforms** | Linux, macOS (Windows explicitly out) |
@@ -28,7 +29,7 @@ v1 creates the HID device in userspace:
 - **Linux:** TPM 2.0 via tpm2-tss ESAPI. Each credential is a wrapped P-256 ECDSA child of an install-bound ECC primary; NV is **not** consumed per credential.
 - **Fallback:** OpenSSL 3 EVP P-256 when SE/TPM is absent, unusable, or `--key-backend=software`.
 
-The authenticator implements a **CTAP 2.1 subset**: `getInfo`, discoverable `makeCredential` / `getAssertion` (ES256 resident keys), packed **self-attestation**, FIDO HID INIT/MSG/CBOR/PING/CANCEL/ERROR/KEEPALIVE, local user-presence confirmation, and an on-disk AES-256-GCM credential store. PIN protocol 2, `hmac-secret`, and CTAP1/U2F follow in immediately subsequent PRs if they stay small.
+The authenticator implements a **CTAP 2.1 subset**: `getInfo`, `makeCredential` / `getAssertion` for discoverable ES256 credentials and, under the proposed K10 amendment, non-discoverable ES256 credentials (`rk=false`), packed **self-attestation**, FIDO HID INIT/MSG/CBOR/PING/CANCEL/ERROR/KEEPALIVE, local user-presence confirmation, and an on-disk AES-256-GCM credential store. PIN protocol 2, `hmac-secret`, and CTAP1/U2F follow in immediately subsequent PRs if they stay small.
 
 Attestation is still packed **self-attestation**. Consumer Secure Enclave / TPM ECDSA does **not** yield FIDO MDS-trusted hardware attestation. Same-uid malware cannot *copy* HW-backed private keys, but it **can sign** via TPM ESAPI or Security.framework **without the daemon and without Approve**. The Approve prompt only covers the HID/CTAP path (K25).
 
@@ -53,6 +54,7 @@ Pain points this project addresses:
 2. macOS Chrome talks HID FIDO devices directly (it does **not** use Apple's WebAuthn API for roaming authenticators), so a virtual HID device is the only way to look like a "real key" to Chrome.
 3. Testing CTAP stacks currently requires hardware or USB/IP. A UHID/IOHIDUserDevice authenticator is a first-class local test double for `libfido2`.
 4. A pure-software key is extractable by same-uid malware. Binding credential private keys to the SE or TPM raises that bar to "malware can *sign* with the key, not *steal* the scalar." That is **not** the residual of a plugged-in YubiKey: a hardware token enforces UP on-chip. Our Approve prompt is HID-daemon UX only (K25).
+5. Some relying parties offer FIDO2 security-key enrollment rather than discoverable passkeys. An explicit `rk=false` CTAP2 request should not fail just because the authenticator also supports discoverable passkeys (proposed K10 amendment; observed with EU Login).
 
 ---
 
@@ -64,7 +66,7 @@ Pain points this project addresses:
 - Success criteria: `fido2-token -L` lists the device; `fido2-token -I <dev>` prints `FIDO_2_0` (and `FIDO_2_1` only after **PR10** — PIN protocol 2 **and** dual-credRandom hmac-secret; K24), our AAGUID, and `rk`; Chrome on **Linux** can register and assert a discoverable ES256 credential (hard v1 gate, K26). Chrome on macOS is best-effort if the HID entitlement + PR3 `.app` spike succeeds.
 - **Use the platform hardware security engine for credential private keys when present** (macOS Secure Enclave, Linux TPM 2.0). OpenSSL software P-256 always compiles and is the automatic fallback.
 - CTAP2.1 subset documented in [Protocol Scope](#protocol--crypto-scope-for-v1).
-- Persistent encrypted resident-key store, multiple RPs, multiple credentials per RP. Mixed backends allowed (old software creds remain valid after a TPM/SE appears).
+- Persistent encrypted credential store, multiple RPs, multiple credentials per RP. Under the proposed K10 amendment, `rk=true` credentials are discoverable by RP ID; `rk=false` credentials require an explicit credential ID in `allowList`. Both kinds use the same `KeyBackend` and store. Mixed backends allowed (old software creds remain valid after a TPM/SE appears).
 - User presence required for every real (non-pre-flight) make/get. No silent assertions.
 - Daemon `swpasskeyd` + CLI `swpasskeyctl`.
 - Unit tests for HID framing, CBOR, CTAP, crypto, store **without** UHID/TPM/SE (mock `KeyBackend`). Linux integration test against `libfido2`. Optional TPM tests via swtpm; optional SE tests on Apple silicon.
@@ -107,7 +109,7 @@ Pain points this project addresses:
 | K7 | **CBOR = Intel tinycbor + a canonical-encode wrapper** | CTAP2 canonical CBOR is a tiny subset (definite lengths, shortest ints, sorted map keys). tinycbor is small C, no JSON. Wrapper in `src/cbor/` enforces canonical form on encode. |
 | K8 | **Tests = Catch2 v3** | Header-light, no gtest runner ceremony. FetchContent. Integration tests optionally link `libfido2` if found. |
 | K9 | **Packed self-attestation only; reserved AAGUID `6fb1dfdd-51c0-43a0-a6f2-f74812cbf8fb`** | Consumer SE/TPM ECDSA is not a FIDO-certified batch attestation. Self-attestation (sign `authData ‖ clientDataHash` with the **credential** key, omit `x5c`) is spec-correct. RPs that require MDS-trusted hardware attestation will reject us — that is OK. Do not pretend otherwise. |
-| K10 | **Discoverable ES256 resident keys only for CTAP2** | Passkeys **are** discoverable credentials. Non-resident CTAP2 credentials are deferred. Algorithm: COSE `-7` (ES256) only. SE only supports P-256; TPM child keys are P-256 to match. |
+| K10 (proposed amendment) | **Support discoverable (`rk=true`) and non-discoverable (`rk=false`) CTAP2 ES256 credentials** | Original rev 4 K10 was deliberately discoverable-only. The existing store already records `Credential::rk` and can retrieve either kind by credential ID. Non-discoverable CTAP2 keys remain stored locally but are excluded from RP-only enumeration; they enable security-key enrollment at relying parties such as EU Login. `rk=false` registration must not replace an existing credential. Keep ES256 (COSE algorithm `-7`, P-256), existing key backends, PIN, UP, and self-attestation unchanged. **Pending upstream review.** |
 | K11 | **BE=0, BS=0** | This is a device-bound key, not a multi-device synced passkey. Setting BE would lie to RPs. HW-backed does not change this. |
 | K12 | **Store DEK lives in the OS keychain (macOS Keychain / Linux libsecret; 0600 file fallback). PIN is CTAP UV, not the disk DEK.** | Daemon must answer `getInfo` / HID INIT at login without a PIN prompt. The HW engine protects **credential private keys**, not the metadata DEK. PCR-sealed wrapping is explicitly out (K21). Name the Keychain item `dek` everywhere. |
 | K13 | **User presence: desktop notification with Approve/Deny, 30 s timeout; never silent.** Pre-flight (`up=false`) is allowed and returns UP=0. | Spec requires evidence of user interaction on USB. CLI stdin is the fallback when no notification daemon is present. |
@@ -876,14 +878,14 @@ Internal failures (I/O, OpenSSL, TPM `TSS2_RC`, SE `CFError`, store corruption) 
 Option-byte policy (makeCredential):
 
 - `options.up` present and `false` → `InvalidOption` (0x2C), regardless of authenticator version.
-- `options.rk` present and `false` → `UnsupportedOption` (0x2B). We only create resident keys.
+- `options.rk` present and `true` → create a discoverable credential (`rk=true`); present and `false` → create a non-discoverable credential (`rk=false`) under the proposed K10 amendment, **not** `UnsupportedOption` (0x2B). The working minimal patch treats an omitted `rk` as `true` for backward compatibility. **Standards caveat:** CTAP 2.1 defines the omitted default as `false`; upstream review should explicitly decide whether to align the omitted case separately.
 - `options.uv` present and `true` (no built-in UV) → `InvalidOption` (0x2C).
 - `credProtect` present and `> 1` → `UnsupportedExtension` (0x4B). Fail closed; do not store a weaker rk.
-- `NotAllowed` (0x30) is for getNextAssertion-without-state and similar, **not** for rk=false.
+- `NotAllowed` (0x30) is for getNextAssertion-without-state and similar, **not** for supported `rk=false` creation.
 
 ### authenticatorGetInfo (0x04)
 
-No parameters. `remainingDiscoverableCredentials` is **0x14 (20)**, not 0x15. Omit key 21 (`vendorPrototypeConfigCommands`) — credMgmt/config are non-goals.
+No parameters. `remainingDiscoverableCredentials` is **0x14 (20)**, not 0x15. Omit key 21 (`vendorPrototypeConfigCommands`) — credMgmt/config are non-goals. The advertised `options.rk=true` means the authenticator **can create discoverable credentials**; it does not require every credential to be discoverable. With the proposed K10 amendment, non-discoverable records still use the shared global store capacity and must not be counted as discoverable in RP-only lookup.
 
 getInfo **examples below are non-normative**. Canonical encoding is pinned by a golden hex test (`tests/get_info_golden_test.cpp`) that python-fido2 / libfido2 accept. Integer keys sort as 1,2,3,…; the **options** sub-map is sorted by **encoded text-key bytes**: `alwaysUv`, `clientPin`, `credMgmt`, `makeCredUvNotRqd`, `pinUvAuthToken`, `plat`, `rk`, `up`. `Writer` **sorts map keys itself** (see CBOR wrapper); callers pass unsorted pairs.
 
@@ -984,6 +986,7 @@ sequenceDiagram
   A->>K: generate()   SE / TPM / software
   K-->>A: SigningKey + pub
   A->>K: wrap_secret(CredRandomWithUV || CredRandomWithoutUV)
+  A->>A: apply rk and discoverable-only replacement policy (proposed K10)
   A->>S: put + flush BEFORE any success HID response
   A->>K: sign_der(authData || clientDataHash)
   A-->>P: {1:"packed", 2:authData, 3:{"alg":-7,"sig":DER}}
@@ -999,7 +1002,7 @@ sequenceDiagram
 | 0x04 | pubKeyCredParams | required; pick first `alg == -7`; else `CTAP2_ERR_UNSUPPORTED_ALGORITHM` |
 | 0x05 | excludeList | matching credId for this rpIdHash: prompt UP first (and verify `pinUvAuthParam`/`mc` if PIN is set), **then** `CTAP2_ERR_CREDENTIAL_EXCLUDED` (0x19) on Allow, **Deny**, or timeout. Never return excluded before UP. Only HID CANCEL → `KEEPALIVE_CANCEL` (0x2D). Catch2: Deny + matching excludeList → `0x19`. |
 | 0x06 | extensions | `hmac-secret` / `hmac-create-secret` (PR10). **`credProtect` present and > 1 → `UnsupportedExtension` (0x4B)** (K27). Ignore other unknown extensions. |
-| 0x07 | options | `rk=false` → `UnsupportedOption` (0x2B). `up=false` → `InvalidOption` (0x2C). `uv=true` → `InvalidOption` (0x2C). |
+| 0x07 | options | Proposed K10: `rk=true` → discoverable; `rk=false` → non-discoverable (both ES256). Omitted `rk` remains `true` in the tested minimal patch, a documented deviation from CTAP 2.1’s specified `false` default. `up=false` → `InvalidOption` (0x2C). `uv=true` → `InvalidOption` (0x2C). |
 | 0x08 | pinUvAuthParam | PR9 |
 | 0x09 | pinUvAuthProtocol | PR9, must be 2 |
 | 0x0A | enterpriseAttestation | reject with `INVALID_PARAMETER` |
@@ -1053,13 +1056,30 @@ No `x5c`. Signature is produced with the **credential** key via `SigningKey::sig
 
 **signCount:** per-credential `uint32`, start at 1 on create, increment on every UP-asserting getAssertion. Pre-flight (`up=false`) does not increment. Persist immediately.
 
-**Capacity:** `kMaxCredentials = 100`. Beyond that: `CTAP2_ERR_KEY_STORE_FULL`.
+**Capacity:** `kMaxCredentials = 100`. Beyond that: `CTAP2_ERR_KEY_STORE_FULL`. Both discoverable and non-discoverable credentials consume a record in this shared capacity; `rk=false` does **not** imply that the key material is stateless or stored on the relying party.
+
+#### Proposed K10 amendment: non-discoverable CTAP2 credentials
+
+**Motivation and status.** The original v1 design rejected `options.rk=false` with `CTAP2_ERR_UNSUPPORTED_OPTION` (0x2B). In October 2026, a Linux/Firefox/TPM2 user reported that GitHub passkey registration succeeded while the European Commission's EU Login **Add a Security Key** flow (`ecas.ec.europa.eu`) failed after PIN verification. Repeated daemon logs contained successful `clientPIN` and `makeCredential` status `43` (0x2B). The small K10 change described below was applied locally, and the user reported successful EU Login enrollment. **This is compatibility evidence, not proof of upstream acceptance, FIDO certification, or complete conformance.** Post-enrollment EU Login assertion should be exercised explicitly in regression/integration testing.
+
+**Proposed behavior:**
+
+1. For `authenticatorMakeCredential`, store the request's explicit discoverability choice in `Credential::rk`: `true` for `rk=true`, `false` for `rk=false`. Remove the early `UnsupportedOption` rejection of `rk=false`. Keep the same ES256 key generation, TPM/SE/software backend selection, PIN checks, local user-presence approval, self-attestation, and persist-before-send rule for both kinds.
+2. A non-discoverable credential **may still be stored in the encrypted local credential database**, with a TPM-wrapped or SE-held signing key as before. "Non-discoverable" specifies how the authenticator finds the credential, not whether its private key must be absent from local storage.
+3. `CredentialStore::find_by_rp(rpIdHash)` returns only `rk=true` records. `CredentialStore::find(rpIdHash, credId)` returns either kind. Consequently, `getAssertion` with an omitted or empty `allowList` does not enumerate `rk=false` records; a non-empty `allowList` may select them when it supplies the correct credential ID and RP ID. Exclusion checks must also recognize either kind by ID.
+4. The replacement rule for a matching RP ID and user ID applies **only when creating a discoverable credential**, and it should replace only discoverable rows. A non-discoverable registration must not erase an existing discoverable passkey or another non-discoverable registration. This preserves coexistence and the ability to enroll multiple security-key credentials.
+5. The current minimal, successfully tested patch uses `q->options.rk.value_or(true)` to preserve previous swpasskey behavior if `rk` is omitted. CTAP 2.1 specifies **`rk=false` when absent**, so this is a conscious compatibility deviation to disclose and review, not a claim of strict conformance. Changing the omitted case to `false` should be considered separately and tested against existing relying parties.
+6. The feature must not change `getInfo`'s `rk=true` capability flag, `BE=0`/`BS=0`, the AAGUID, or packed self-attestation. Relying parties requiring FIDO-certified attestation may still reject registration.
+
+**Required regression coverage:** explicit `rk=false` registration succeeds; persisted row has `rk=false`; RP-only enumeration excludes it; `getAssertion` without an `allowList` cannot discover it; `getAssertion` with the correct ID in `allowList` can sign; cross-RP credential IDs fail; `excludeList` finds it; multiple non-discoverable credentials coexist; and creating one leaves existing discoverable passkeys intact. Retain tests for normal `rk=true` creation, PIN checks, UP, the store's 100-credential limit, and the omitted-`rk` compatibility behavior.
+
+Specification: [CTAP 2.1, authenticatorMakeCredential and credential discoverability](https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html).
 
 ### authenticatorGetAssertion (0x02) + getNextAssertion (0x08)
 
-Discoverable (empty allowList) and non-empty allowList both supported.
+Discoverable credentials (`rk=true`) are eligible when `allowList` is omitted or empty. Non-discoverable credentials (`rk=false`) are eligible only when a non-empty `allowList` supplies their credential ID (proposed K10 amendment).
 
-1. Filter store by `rpIdHash = SHA-256(rpId)` and optional allowList credIds.
+1. Filter store by `rpIdHash = SHA-256(rpId)`: on omitted/empty `allowList`, enumerate `rk=true` records only; on a non-empty `allowList`, look up each supplied credential ID, including `rk=false` rows.
 2. If none: `CTAP2_ERR_NO_CREDENTIALS`.
 3. **PIN / UV policy (`alwaysUv: false`):** getAssertion **without** `pinUvAuthParam` is allowed even if a PIN is set; the assertion has UV=0. makeCredential, by contrast, requires a valid `pinUvAuthParam` with `mc` when PIN is set (`makeCredUvNotRqd: false`). If `pinUvAuthParam` is present: `verify(token, clientDataHash, pinUvAuthParam)`, require `ga` permission, match `permissionsRPID` to `rp.id` if the token was bound to an rpId.
 4. If `up` is false (pre-flight): **no prompt, do not increment `signCount`**, flags UP=0 and UV=0 (UV=1 only if a valid `pinUvAuthParam` was verified). **Still `load` + `sign_der`** — CTAP 2.1 returns an assertion including `sig` (key 0x03). Skipping sign produces an invalid response; platforms use this to probe excludeList/allowList. U2F check-only (`P1=0x07`) is the only “no sign” probe; do not conflate it with CTAP2.
@@ -1366,7 +1386,7 @@ Inner plaintext is CTAP2-canonical CBOR:
       "created":      uint,          # unix seconds
       "last_used":    uint,
       "cred_random":  bstr,          # wrap_secret output (64 B: UV || noUV; identity if software)
-      "rk":           true
+      "rk":           bool,          # true: discoverable; false: non-discoverable (K10)
     }
   ]
 }
@@ -1393,6 +1413,7 @@ struct Credential {
   uint64_t created_unix{};
   uint64_t last_used_unix{};
   std::vector<uint8_t> cred_random;     // wrap_secret output (64 B dual credRandom)
+  bool rk{true};                         // false: non-discoverable (also used by CTAP1/U2F)
 };
 
 class CredentialStore {
@@ -1422,7 +1443,7 @@ private:
 }  // namespace swpk::store
 ```
 
-**Invariant:** `backend != Software` ⇒ `priv.empty()`. `backend == Software` ⇒ `handle.empty()` and `priv.size()==32`. Store `put()` rejects violations.
+**Invariant:** `backend != Software` ⇒ `priv.empty()`. `backend == Software` ⇒ `handle.empty()` and `priv.size()==32`. Store `put()` rejects violations. Under proposed K10, `Credential::rk` is serialized with each row; `find_by_rp` filters to `rk=true`, while `find(rpIdHash, credId)` can return either kind. No on-disk format version change is required because the `rk` field already exists for U2F records.
 
 **Atomicity:** write `credentials.bin.tmp` → `fsync` → `rename` over `credentials.bin`. POSIX rename is atomic on the same filesystem.
 
@@ -1524,7 +1545,7 @@ User-facing one-liner:
 
 These hold for clients that talk to `swpasskeyd` over FIDO HID. They do **not** bind same-uid malware that calls TPM ESAPI or `SecKeyCreateSignature` directly (K25).
 
-- No HID assertion or resident-key creation without local UP (except spec-mandated pre-flight with `up=false`, which returns UP=0 and does not increment `signCount`).
+- No HID assertion or credential creation (discoverable or non-discoverable) without local UP, except the spec-mandated getAssertion pre-flight with `up=false` (returns UP=0 and does not increment `signCount`).
 - Credentials are bound to `rpIdHash`; we refuse to assert for a different rpId.
 - PIN is rate-limited and lockout-able; comparison is `CRYPTO_memcmp`.
 - Self-attestation cannot be confused with hardware attestation: no `x5c`, unique AAGUID not in the FIDO MDS.
@@ -1662,7 +1683,7 @@ No staged percentage rollout — this is a local daemon.
 5. **Safari:** treat as out of v1 unless the PR3 spike shows CTK enumerating us.
 6. **Official USB PID:** apply to [pid.codes](https://pid.codes/) for `0x1209:????`. Until then 0xF1D0 is development-only.
 7. **Max credentials / per-RP policy:** 100 global vs 8 per RP? 100 is fine for software and for TPM wrapped blobs (disk, not NV).
-8. **Should `rk=false` (non-resident) be implemented?** **Closed:** no. Passkeys are resident. Return `UnsupportedOption` (0x2B), not `NOT_ALLOWED`. Non-resident + SE would also need a handle somewhere.
+8. **Should `rk=false` (non-discoverable) be implemented?** **Reopened, with a locally validated "yes" proposal (K10), pending maintainer review.** EU Login security-key enrollment failed with `makeCredential` 0x2B and succeeded after a minimal `rk=false` patch. The store already persists handles for either credential type. **Still open:** should omitted `rk` retain the working patch's legacy `true`, or follow CTAP 2.1's specified default `false`? Do not confuse non-discoverability with absence of local storage.
 9. **Daemon vs CLI-invoked-per-gesture:** a long-running daemon is required so the HID device stays enumerated. Yes.
 10. **hmac-secret on SE:** ship Keychain-item wrap in v1 (decided: yes; document the gap). ECIES-to-SE-pub is v1.1.
 11. **TPM owner auth:** assume empty owner auth (typical for consumer PCs). If owner auth is set, startup should fail the TPM probe with a clear log and fall back to software under `auto`.
@@ -1691,6 +1712,7 @@ No staged percentage rollout — this is a local daemon.
 | R16 | swtpm not available in CI | **Low** | TPM tests optional (`SWPASSKEY_ITEST_TPM=1`); software + mock always run. |
 | R17 | TPM cleared / owner-changed → all TPM creds die | **Med** | Expected. Log clearly. Do not regenerate software stand-ins. |
 | R18 | Mixed-backend store after `--key-backend=software` | **Low** | Dispatch `load()` on the row's `backend`; HW rows fail closed. |
+| R19 (proposed K10) | Non-discoverable registration accidentally replaces an existing passkey, or `rk=false` is discoverable without `allowList` | **High** | Conditional replacement restricted to discoverable rows; `find_by_rp` filters `rk=true`; regression tests cover coexistence, RP binding and allowList selection. |
 
 ---
 
@@ -1958,6 +1980,7 @@ This is part of **PR3**, not an implied leftover. Unit-test the keepalive state 
 | KeyBackend mock | In-memory map of handles → scalars, used by CTAP tests. |
 | Store | temp dir, put/find/erase/reset; reject HW row with non-empty `priv`. |
 | makeCredential | Mock KeyBackend + `AutoAllowPresence`; parse authData flags, AAGUID, COSE key; verify packed self-sig with OpenSSL using the mock's pub. |
+| Non-discoverable CTAP2 (proposed K10) | Register explicit `rk=false`; verify persistent `Credential::rk=false`, non-enumeration via `find_by_rp`, successful allowList assertion, no credential without allowList, exclusion detection, PIN/UP requirements, cross-RP rejection, coexistence with existing discoverable and multiple non-discoverable keys; preserve explicit `rk=true` and omitted-`rk` compatibility tests. |
 | getAssertion | Empty allowList; excludeList; UP=false pre-flight does not bump counter **but does call `sign_der`** (UP=0). Mixed-backend mock: software + fake-TPM rows in one store. |
 | PIN | setPIN / getToken / wrong PIN decrements retries; protocol 2 encrypt/decrypt (software ECDH). |
 
@@ -2087,7 +2110,7 @@ Live board (done / next / pending, branches, deviations): **[`STATUS.md`](STATUS
 - **Title:** `feat: CTAP2 makeCredential and getAssertion (ES256 rk, packed self-attest)`
 - **Files:** `src/ctap/make_credential.cpp`, `src/ctap/get_assertion.cpp`, `src/ctap/auth_data.cpp`, in-memory `store::MemoryStore`, `tests/make_credential_test.cpp`, `tests/get_assertion_test.cpp`, `tests/packed_self_attest_golden_test.cpp`, `src/ui/presence.cpp` with `AutoAllowPresence` / `StdinPresence`
 - **Depends on:** PR3
-- **Description:** Full resident-key path against `KeyBackend` (software). Packed self-attestation **text** keys in attStmt; golden hex. excludeList: UP first, then `CREDENTIAL_EXCLUDED` (Catch2: Deny + matching excludeList → `0x19`; only HID CANCEL → `0x2D`). Pre-flight `up=false` **still signs**, no counter bump. `up=false` on make → `InvalidOption`; `rk=false` → `UnsupportedOption`; `credProtect>1` → `UnsupportedExtension`. `user.id` ≤ 64, `rp.id` 1–255. Persist-before-send (in-memory: update then “respond”). Linux Chrome register is the gate.
+- **Description:** Full resident-key path against `KeyBackend` (software). Packed self-attestation **text** keys in attStmt; golden hex. excludeList: UP first, then `CREDENTIAL_EXCLUDED` (Catch2: Deny + matching excludeList → `0x19`; only HID CANCEL → `0x2D`). Pre-flight `up=false` **still signs**, no counter bump. `up=false` on make → `InvalidOption`; `rk=false` → `UnsupportedOption` (**original PR4 behavior; the proposed post-v1 K10 amendment below revises this**); `credProtect>1` → `UnsupportedExtension`. `user.id` ≤ 64, `rp.id` 1–255. Persist-before-send (in-memory: update then “respond”). Linux Chrome register is the gate.
 
 ### PR5 — Persistent encrypted store + OS keychain
 
@@ -2151,6 +2174,14 @@ Live board (done / next / pending, branches, deviations): **[`STATUS.md`](STATUS
 - **Files:** `packaging/linux/systemd/swpasskeyd.service`, `packaging/macos/com.tangzixiang.swpasskeyd.plist`, README
 - **Depends on:** PR3 + working non-TTY presence on that OS (PR8)
 - **Description:** User units, no root daemon. **Do not** enable a headless user unit until presence works. Document `plugdev` + `tss` (distro TPM udev, not our rules). No TPM `uaccess` rule.
+
+### Proposed follow-up PR — Support non-discoverable CTAP2 credentials (pending review)
+
+- **Title:** `feat(ctap): support non-discoverable FIDO2 credentials (rk=false)`
+- **Scope:** `src/ctap/make_credential.cpp` (explicit `rk=false`, persist `Credential::rk`, discoverable-only replacement), relevant Catch2 tests, `README.md`, and this `DESIGN.md` amendment. Existing `getAssertion` and credential-store lookup support is reused rather than rewritten.
+- **Motivation:** Linux Firefox + TPM2 swpasskey worked with GitHub discoverable passkeys, but EU Login security-key enrollment requested a non-discoverable credential and failed with CTAP status 0x2B. A local implementation of the amendment allowed enrollment.
+- **Acceptance criteria:** unit tests for both credential kinds; discoverable enumeration excludes `rk=false`; allowList can locate and assert `rk=false`; no unexpected replacement; existing GitHub discoverable flow stays working; manual EU Login registration and subsequent assertion tested; no regression to PIN, UP, self-attestation, or TPM key protection.
+- **Status:** proposed, not part of the historical PR1–PR13 rollout and not yet accepted or merged upstream. In particular, omitted `rk` handling needs an explicit decision because the minimal patch keeps `true` while the CTAP default is `false`.
 
 ### Suggested merge order
 

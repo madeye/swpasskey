@@ -30,7 +30,7 @@ deviations from the design. What `swpasskeyd` does today:
 - enumerates as a FIDO HID device (Linux UHID; macOS `IOHIDUserDevice` from
   the signed `.app`) and runs the two-thread CTAPHID loop with keepalives and
   cancel;
-- CTAP 2.1 subset: `getInfo`, discoverable ES256 `makeCredential` /
+- CTAP 2.1 subset: `getInfo`, discoverable and non-discoverable ES256 `makeCredential` /
   `getAssertion` / `getNextAssertion` with packed self-attestation,
   `clientPIN` protocol 2, `hmac-secret` (dual credRandom), `reset`,
   `authenticatorSelection`; CTAP1/U2F over `CTAPHID_MSG`;

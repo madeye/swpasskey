@@ -146,9 +146,6 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_make_credential(
   if (q->options.up.has_value() && !*q->options.up) {
     return fail(Status::InvalidOption);
   }
-  if (q->options.rk.has_value() && !*q->options.rk) {
-    return fail(Status::UnsupportedOption);
-  }
   if (q->options.uv.has_value() && *q->options.uv) {
     return fail(Status::InvalidOption);
   }
@@ -213,6 +210,7 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_make_credential(
   c.user_id = q->user->id;
   c.user_name = q->user->name;
   c.user_display = q->user->display_name;
+  c.rk = q->options.rk.value_or(true);
   if (!crypto_.random(c.cred_id)) {
     return fail(Status::Other);
   }
@@ -248,11 +246,13 @@ Result<std::vector<std::uint8_t>> Authenticator::cmd_make_credential(
 
   // CTAP 2.1 §6.1.2: a new discoverable credential for the same rp.id +
   // user.id replaces the old one.
-  for (const auto& old : store_.find_by_rp(rp_id_hash)) {
-    if (old.user_id == c.user_id) {
-      destroy_key(old);
-      (void)store_.erase(old.cred_id);
-      log::info("make_credential_replaced", {{"rp", c.rp_id}});
+  if (c.rk) {
+    for (const auto& old : store_.find_by_rp(rp_id_hash)) {
+      if (old.user_id == c.user_id) {
+        destroy_key(old);
+        (void)store_.erase(old.cred_id);
+        log::info("make_credential_replaced", {{"rp", c.rp_id}});
+      }
     }
   }
 
